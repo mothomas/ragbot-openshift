@@ -1,0 +1,95 @@
+# One ApplicationSet, one chart, two clusters. Each ACM Placement feeds a
+# generator that carries the role; the role picks values-<role>.yaml, which
+# decides which pieces render on that cluster.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: ragbot
+  namespace: openshift-gitops
+spec:
+  description: ragbot split deployment (on-prem data/app tier, ROSA GPU inference)
+  sourceRepos:
+    - https://github.com/mothomas/ragbot-openshift.git
+  destinations:
+    - {server: '*', namespace: ragbot}
+  # Namespace-scoped only: the chart creates nothing cluster-wide. The
+  # operators (MariaDB, frappe-operator, RHSI, GPU, NFD) are prerequisites.
+  clusterResourceWhitelist:
+    - {group: '', kind: Namespace}
+  namespaceResourceWhitelist:
+    - {group: '', kind: '*'}
+    - {group: apps, kind: Deployment}
+    - {group: batch, kind: Job}
+    - {group: k8s.mariadb.com, kind: MariaDB}
+    - {group: vyogo.tech, kind: FrappeBench}
+    - {group: vyogo.tech, kind: FrappeSite}
+    - {group: vyogo.tech, kind: SiteConfig}
+    - {group: skupper.io, kind: Site}
+    - {group: skupper.io, kind: Listener}
+    - {group: skupper.io, kind: Connector}
+    - {group: skupper.io, kind: AccessGrant}
+    - {group: skupper.io, kind: AccessToken}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: ragbot
+  namespace: openshift-gitops
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusterDecisionResource:
+        configMapRef: acm-placement
+        labelSelector:
+          matchLabels:
+            cluster.open-cluster-management.io/placement: ragbot-onprem
+        requeueAfterSeconds: 180
+        values:
+          role: onprem
+    - clusterDecisionResource:
+        configMapRef: acm-placement
+        labelSelector:
+          matchLabels:
+            cluster.open-cluster-management.io/placement: ragbot-rosa
+        requeueAfterSeconds: 180
+        values:
+          role: rosa
+  template:
+    metadata:
+      name: 'ragbot-{{ .values.role }}'
+      labels:
+        ragbot.io/role: '{{ .values.role }}'
+    spec:
+      project: ragbot
+      source:
+        repoURL: https://github.com/mothomas/ragbot-openshift.git
+        targetRevision: main
+        path: charts/ragbot
+        helm:
+          releaseName: ragbot
+          valueFiles:
+            - values.yaml
+            - 'values-{{ .values.role }}.yaml'
+            # Optional per-cluster overrides, e.g. values-cluster-onprem-ocp1.yaml
+            - 'values-cluster-{{ .name }}.yaml'
+          ignoreMissingValueFiles: true
+      destination:
+        name: '{{ .name }}'
+        namespace: ragbot
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        # CRs are applied before their operators have reconciled anything; retry
+        # rather than fail the first sync.
+        retry:
+          limit: 10
+          backoff: {duration: 30s, factor: 2, maxDuration: 5m}
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+          - SkipDryRunOnMissingResource=true
+        managedNamespaceMetadata:
+          labels:
+            ragbot.io/role: '{{ .values.role }}'

@@ -1,0 +1,119 @@
+# Test services beside the demo: a frontend pinned to TEST_SITE and its own MCP server and agent, so the system checks in
+# tests/system never touch the demo site. The absence profile adds the same trio, which the absence matrix re-points per cell.
+x-frontend: &frontend
+  logging: &logging
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+  image: ${CUSTOM_IMAGE:-frappe-demo}:${CUSTOM_TAG:-16}
+  pull_policy: never
+  platform: !reset null
+  command: [nginx-entrypoint.sh]
+  environment: &frontend-env
+    BACKEND: backend:8000
+    SOCKETIO: websocket:9000
+    UPSTREAM_REAL_IP_ADDRESS: 127.0.0.1
+    UPSTREAM_REAL_IP_HEADER: X-Forwarded-For
+    UPSTREAM_REAL_IP_RECURSIVE: "off"
+    PROXY_READ_TIMEOUT: 120
+    CLIENT_MAX_BODY_SIZE: 50m
+  volumes:
+    - sites:/home/frappe/frappe-bench/sites
+    - type: bind
+      source: ./rag/rag/public
+      target: /home/frappe/frappe-bench/assets/rag
+      read_only: true
+    - type: bind
+      source: ./nginx-realtime-auth.conf
+      target: /etc/nginx/conf.d/realtime-auth.conf
+      read_only: true
+
+x-mcp: &mcp
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+  logging: *logging
+  image: ${TEST_MCP_IMAGE:-frappe-mcp-server:local}
+  pull_policy: never
+  volumes:
+    - type: bind
+      source: ./mcp/config.yaml
+      target: /app/config.yaml
+      read_only: true
+
+x-agent: &agent
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+  logging: *logging
+  image: ${TEST_AGENT_IMAGE:-frappe-ai-agent:local}
+  pull_policy: never
+  extra_hosts:
+    - host.docker.internal:host-gateway
+  environment: &agent-env
+    AI_AGENT_LLM_BASE_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+    AI_AGENT_LLM_MODEL: ${AI_MODEL:-gemma4:26b}
+    AI_AGENT_LLM_NUM_CTX: ${AI_NUM_CTX:-65536}
+
+services:
+  test-frontend:
+    <<: *frontend
+    environment:
+      <<: *frontend-env
+      FRAPPE_SITE_NAME_HEADER: ${TEST_SITE:-test.localhost}
+    ports:
+      - "127.0.0.1:${TEST_HTTP_PORT:-8081}:8080"
+    networks:
+      default:
+        aliases: ["${TEST_SITE:-test.localhost}"]
+    restart: unless-stopped
+
+  test-mcp:
+    <<: *mcp
+    environment:
+      FRAPPE_BASE_URL: http://test-frontend:8080
+      OAUTH_ISSUER_URL: http://test-frontend:8080
+      OAUTH_TOKEN_INFO_URL: http://test-frontend:8080/api/method/frappe.integrations.oauth2.openid_profile
+    restart: unless-stopped
+
+  test-agent:
+    <<: *agent
+    environment:
+      <<: *agent-env
+      AI_AGENT_MCP_SERVER_URL: http://test-mcp:8080/mcp
+      AI_AGENT_FRAPPE_URL: http://test-frontend:8080
+      AI_AGENT_CORS_ORIGINS: '["http://${TEST_SITE:-test.localhost}:${TEST_HTTP_PORT:-8081}"]'
+    ports:
+      - "127.0.0.1:${TEST_AGENT_PORT:-8485}:8484"
+    restart: unless-stopped
+
+  absence-frontend:
+    <<: *frontend
+    profiles: [absence]
+    environment:
+      <<: *frontend-env
+      FRAPPE_SITE_NAME_HEADER: ${ABSENCE_SITE:-rag.localhost}
+    ports:
+      - "127.0.0.1:8082:8080"
+    networks:
+      default:
+        aliases: ["${ABSENCE_SITE:-rag.localhost}"]
+
+  absence-mcp:
+    <<: *mcp
+    profiles: [absence]
+    environment:
+      FRAPPE_BASE_URL: ${ABSENCE_FRAPPE:-http://absence-frontend:8080}
+      OAUTH_ISSUER_URL: ${ABSENCE_FRAPPE:-http://absence-frontend:8080}
+      OAUTH_TOKEN_INFO_URL: ${ABSENCE_FRAPPE:-http://absence-frontend:8080}/api/method/frappe.integrations.oauth2.openid_profile
+      TOOLS_KNOWLEDGE_BASE: ${ABSENCE_KB:-true}
+
+  absence-agent:
+    <<: *agent
+    profiles: [absence]
+    environment:
+      <<: *agent-env
+      AI_AGENT_MCP_SERVER_URL: ${ABSENCE_MCP:-http://absence-mcp:8080/mcp}
+      AI_AGENT_FRAPPE_URL: ${ABSENCE_FRAPPE:-http://absence-frontend:8080}
+      AI_AGENT_CORS_ORIGINS: '["http://localhost:8082"]'
+    ports:
+      - "127.0.0.1:8486:8484"

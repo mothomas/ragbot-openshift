@@ -1,0 +1,104 @@
+{{- if eq (include "ragbot.role" .) "onprem" }}
+{{- $o := .Values.onprem }}
+{{- $b := $o.bench }}
+{{- if $b.indexWorker.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $b.name }}-worker-index
+  labels:
+    {{- include "ragbot.labels" . | nindent 4 }}
+  annotations:
+    {{- include "ragbot.wave" "2" | nindent 4 }}
+spec:
+  replicas: {{ $b.indexWorker.replicas }}
+  selector:
+    matchLabels:
+      {{- include "ragbot.selector" "worker-index" | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ragbot.selector" "worker-index" | nindent 8 }}
+    spec:
+      enableServiceLinks: false
+      {{- include "ragbot.pullSecrets" . | nindent 6 }}
+      containers:
+        - name: worker
+          # Serves index alone: taking long/default/short too would undo the split (ragbot ADR-007).
+          args: [bench, worker, --queue, index]
+          {{- include "ragbot.benchContainerCommon" . | nindent 10 }}
+          resources:
+            requests: {cpu: 200m, memory: 512Mi}
+            limits: {cpu: "2", memory: 2Gi}
+      volumes:
+        - name: sites
+          persistentVolumeClaim:
+            claimName: {{ $b.name }}-sites
+---
+{{- end }}
+{{- if $o.postSetup.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $b.name }}-post-setup
+  labels:
+    {{- include "ragbot.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: {{ mul (add $o.postSetup.waitMinutes 10) 60 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ragbot.selector" "post-setup" | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      enableServiceLinks: false
+      {{- include "ragbot.pullSecrets" . | nindent 6 }}
+      containers:
+        - name: post-setup
+          command: [bash, -ec]
+          args:
+            - |
+              cd /home/frappe/frappe-bench
+              [ -f sites/apps.txt ] && ln -sf sites/apps.txt apps.txt 2>/dev/null || true
+              SITE={{ $o.siteHost | quote }}
+              ALIAS={{ include "ragbot.frappeInternalHost" . | quote }}
+
+              echo "waiting for $SITE with rag installed"
+              deadline=$(( $(date +%s) + {{ mul $o.postSetup.waitMinutes 60 }} ))
+              until [ -f "sites/$SITE/site_config.json" ] \
+                    && bench --site "$SITE" list-apps 2>/dev/null | grep -qw rag; do
+                [ "$(date +%s)" -lt "$deadline" ] || { echo "site not ready in time" >&2; exit 1; }
+                sleep 20
+              done
+
+              # nginx runs with FRAPPE_SITE_NAME_HEADER=$host, so in-cluster callers
+              # (agent, MCP) that use http://$ALIAS:8080 need $ALIAS to resolve to
+              # the site. Same symlink mechanism the operator uses for its Route host.
+              # Same for every name the MetalLB address is reached by.
+              for name in "$ALIAS" {{ range include "ragbot.lbAliases" . | fromJsonArray }}{{ . | quote }} {{ end }}; do
+                [ "$name" = "$SITE" ] && continue
+                [ -d "sites/$name" ] && [ ! -L "sites/$name" ] && { echo "sites/$name is a real site, not aliasing"; continue; }
+                ln -sfn "$SITE" "sites/$name"
+                echo "aliased sites/$name -> $SITE"
+              done
+
+              # Drive's non-flat storage builds folder paths outside the site, so
+              # create_folder fails; flat storage is what ragbot runs with.
+              bench --site "$SITE" execute frappe.db.set_single_value \
+                --args '["Drive Disk Settings", "flat", 1]'
+
+              bench --site "$SITE" execute rag.ingest.health || true
+          {{- include "ragbot.benchContainerCommon" . | nindent 10 }}
+          resources:
+            requests: {cpu: 100m, memory: 512Mi}
+            limits: {cpu: "1", memory: 1Gi}
+      volumes:
+        - name: sites
+          persistentVolumeClaim:
+            claimName: {{ $b.name }}-sites
+{{- end }}
+{{- end }}

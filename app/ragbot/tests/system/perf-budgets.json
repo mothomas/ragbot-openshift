@@ -1,0 +1,19 @@
+{
+ "rag.search": {"repo": "ragbot (rag)", "baseline": {"p50_ms": 30.8, "p95_ms": 45.7}, "budget": {"p95_ms": 100}, "source": "own: about twice the measured p95 on the seeded audit corpus; no published threshold for an internal search API"},
+ "rag.status.link": {"repo": "metis", "baseline": {"p50_ms": 49.0, "p95_ms": 79.7}, "budget": {"p95_ms": 200}, "source": "own: the chip polls it every second, so it must stay well under the 1 s poll interval; 200 ms leaves room for two outbound probes"},
+ "rag.status.summary": {"repo": "metis", "baseline": {"p50_ms": 5.8, "p95_ms": 11.2}, "budget": {"p95_ms": 100}, "source": "own: baseline plus a margin for a larger index (it scans every chunk today)"},
+ "rag.library.documents": {"repo": "metis", "baseline": {"p50_ms": 11.3, "p95_ms": 12.4}, "budget": {"p95_ms": 100}, "source": "own"},
+ "rag.library.folder": {"repo": "metis", "baseline": {"p50_ms": 25.9, "p95_ms": 29.3}, "budget": {"p95_ms": 100}, "source": "own"},
+ "frappe_ai.get_recent_messages": {"repo": "frappe_ai", "baseline": {"p50_ms": 6.8, "p95_ms": 30.8}, "budget": {"p95_ms": 100}, "source": "own"},
+ "agent./health": {"repo": "frappe-ai-agent", "baseline": {"p50_ms": 2.6, "p95_ms": 9.0}, "budget": {"p95_ms": 50}, "source": "own"},
+ "mcp.tools_list": {"repo": "frappe-mcp-server", "baseline": {"p50_ms": 0.4, "p95_ms": 315.1}, "budget": {"p95_ms": 500}, "source": "own: the p95 is the first call's remote sid validation; later calls are cached"},
+ "mcp.search_knowledge_base": {"repo": "frappe-mcp-server + rag", "baseline": {"p50_ms": 18.8, "p95_ms": 37.6}, "budget": {"p95_ms": 150}, "source": "own"},
+ "answer.time_to_first_token": {"repo": "all (Frappe relay, agent, model, MCP, rag)", "baseline": {"p50_ms": 2119, "p95_ms": 2146}, "budget": {"p95_ms": 5000}, "source": "own, bounded by Nielsen's 10 s limit for keeping attention (https://www.nngroup.com/articles/response-times-3-important-limits/); the model on this host is gemma4:26b"},
+ "answer.total": {"repo": "all", "baseline": {"p50_ms": 2501, "p95_ms": 2527}, "budget": {"p95_ms": 10000}, "source": "own, same bound; a short grounded answer"},
+ "metis.lab": {"repo": "metis", "baseline": {"lcp_ms": 4000, "tbt_ms": 60, "cls": 0}, "budget": {"lcp_ms": 2500, "tbt_ms": 200, "cls": 0.1}, "source": "published: Core Web Vitals 'good' thresholds LCP 2.5 s and CLS 0.1 (https://web.dev/articles/vitals), Lighthouse TBT 200 ms; lab run with Lighthouse 12 mobile defaults"},
+ "metis.bundle_js_gzip_kb": {"repo": "metis", "baseline": {"kb": 486.8}, "budget": {"kb": 535}, "source": "own: baseline plus 10 per cent so the bundle cannot grow unnoticed"},
+ "frappe_ai.bundle_js_kb": {"repo": "frappe_ai", "baseline": {"kb": 851.5}, "budget": {"kb": 937}, "source": "own: baseline plus 10 per cent"},
+ "image.frappe-ai-agent:local": {"repo": "frappe-ai-agent", "baseline": {"mb": 368}, "budget": {"mb": 405}, "source": "own: baseline plus 10 per cent"},
+ "image.frappe-mcp-server:local": {"repo": "frappe-mcp-server", "baseline": {"mb": 36}, "budget": {"mb": 40}, "source": "own: baseline plus 10 per cent"},
+ "image.frappe-demo:16": {"repo": "ragbot (harness)", "baseline": {"mb": 4975}, "budget": {"mb": 5470}, "source": "own: baseline plus 10 per cent"}
+}

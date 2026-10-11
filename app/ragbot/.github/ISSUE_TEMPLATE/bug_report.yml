@@ -1,0 +1,77 @@
+name: Bug report
+description: Something in the stack does not do what the documents say.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A vulnerability does not go here. Report it privately:
+        [Security > Advisories > Report a vulnerability](https://github.com/tssarathi/ragbot/security/advisories/new).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, and what the README or the code led you to expect instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to reproduce it
+      description: The exact commands, from a clean `make setup` where you can.
+      placeholder: |
+        1. make setup
+        2. upload report.pdf to Drive
+        3. ask "what is in report.pdf" at /ask
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Which part
+      multiple: true
+      options:
+        - Install or make setup
+        - Indexing a Drive file
+        - Search or an answer's sources
+        - The /ask page (Metis)
+        - The ERPNext AI sidebar
+        - The Status panel
+        - The MCP server
+        - Documentation
+        - Something else
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Commit
+      description: "`git rev-parse --short HEAD` in your checkout."
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: "Output of `docker version --format '{{.Server.Version}}'`, your operating system, and whether `OLLAMA` is `native` or `container`."
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: "`make logs`, the browser console, or the Error Log row. Remove passwords, session ids and document contents first."
+      render: text
+    validations:
+      required: false
+  - type: checkboxes
+    id: checked
+    attributes:
+      label: Before opening this
+      options:
+        - label: Both models are on the host (`ollama list`).
+          required: true
+        - label: I searched the open issues for the same problem.
+          required: true

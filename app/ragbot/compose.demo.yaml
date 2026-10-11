@@ -1,0 +1,208 @@
+# Docker's json-file driver keeps every line forever unless told otherwise
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
+x-local: &local
+  platform: !reset null
+  pull_policy: never
+  logging: *logging
+
+# <<: takes a single anchor; `<<: [*a, *b]` silently drops !reset (docker/compose#11706)
+x-app: &app
+  <<: *local
+  volumes:
+    - &rag
+      type: bind
+      # the demo can run a git worktree of its own instead of this working tree (ADR-017); default: this one
+      source: ${DEMO_TREE:-.}/rag
+      target: /home/frappe/frappe-bench/apps/rag
+      bind:
+        create_host_path: false
+    - &mariadb-cnf
+      type: bind
+      source: ./mariadb-client.cnf
+      target: /home/frappe/.my.cnf
+      read_only: true
+      bind:
+        create_host_path: false
+  extra_hosts:
+    - host.docker.internal:host-gateway
+  environment:
+    # ponytail: the app is importable by path alone, so rag/pyproject.toml is never installed
+    # and its dependencies come from drive's. Put them in the image when drive drops one.
+    PYTHONPATH: /home/frappe/frappe-bench/apps/rag
+
+# only backend writes rag (bench build compiles /ask); the rest run its code, and queue-long parses
+# uploaded PDFs, so a hostile file must not be able to rewrite the owner's working tree
+x-worker: &worker
+  <<: *app
+  volumes:
+    - <<: *rag
+      read_only: true
+    - *mariadb-cnf
+
+services:
+  # configurator rebuilds sites/apps.txt from `ls -1 apps`, so it needs the mount too. It also declares the
+  # index queue (ADR-007), which is bench-wide: bench worker refuses a queue common_site_config does not name,
+  # and a worker has no site to read one from. "$$0" is frappe_docker's own command, which this runs first.
+  configurator:
+    <<: *worker
+    entrypoint:
+      - bash
+      - -c
+      - >-
+        bash -c "$$0" &&
+        bench set-config -gp workers '{"index": {"timeout": 1500}}'
+  backend:
+    <<: *app
+  websocket:
+    <<: *local
+    # the realtime service exits when redis-queue is away, and a replaced container can come back on another address,
+    # which nginx resolves once: socket.io then 502s until nginx restarts. Retrying in place holds the address through
+    # an outage, and the healthcheck, not the restart count, now says the service is down (DECISIONS.md, H02).
+    command:
+      - sh
+      - -c
+      - 'trap "kill -TERM $$child 2>/dev/null; exit 0" TERM INT;
+         while :; do node /home/frappe/frappe-bench/apps/frappe/socketio.js & child=$$!; wait "$$child" && break; sleep 2; done'
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(9000, '127.0.0.1').on('connect', () => process.exit(0)).on('error', () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+  queue-short:
+    <<: *worker
+  queue-long:
+    <<: *worker
+  # Indexing has its own queue and worker, so a burst of uploads neither waits on nor delays the chat relay
+  # jobs on long (ADR-007). It serves index alone: taking long, default or short back would undo that.
+  queue-index:
+    <<: *worker
+    image: ${CUSTOM_IMAGE:-frappe-demo}:${CUSTOM_TAG:-16}
+    restart: unless-stopped
+    command: bench worker --queue index
+    depends_on:
+      configurator:
+        condition: service_completed_successfully
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - <<: *rag
+        read_only: true
+      - *mariadb-cnf
+  scheduler:
+    <<: *worker
+  frontend:
+    <<: *local
+    environment:
+      FRAPPE_SITE_NAME_HEADER: ${SITE_NAME:-demo.localhost}
+    ports:
+      - "127.0.0.1:${HTTP_PUBLISH_PORT:-8080}:8080"
+    volumes:
+      # frappe_docker's entrypoint relinks sites/assets to this container's baked assets on
+      # every start, so a bind-mounted app's own symlink dangles here; mount its files directly
+      - type: bind
+        source: ${DEMO_TREE:-.}/rag/rag/public
+        target: /home/frappe/frappe-bench/assets/rag
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./nginx-realtime-auth.conf
+        target: /etc/nginx/conf.d/realtime-auth.conf
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      # the realtime service authenticates a socket by fetching the site's own name back, so
+      # that name has to resolve inside the network too, not just in the browser
+      default:
+        aliases:
+          - ${SITE_NAME:-demo.localhost}
+
+  db:
+    image: mariadb:12.3.3@sha256:805c8e104bd563d5bfa24fadd3f31cd419ea859cb5277f32b5dbf2db714f9ed1
+    logging: *logging
+    volumes:
+      # conf.d is read last, so this wins over the image's own 50-server.cnf
+      - type: bind
+        source: ./mariadb-server.cnf
+        target: /etc/mysql/conf.d/ragbot.cnf
+        read_only: true
+        bind:
+          create_host_path: false
+
+  # only with OLLAMA=container; by default the stack uses the host's own Ollama
+  ollama:
+    image: ollama/ollama:0.34.1@sha256:0c0a83210471fb50226bcdc2d6611d20ab13ae87e024cc304c94a6a5765c5e65
+    logging: *logging
+    profiles: [ollama]
+    environment:
+      OLLAMA_NOPRUNE: "1"
+    volumes:
+      - type: bind
+        source: ${HOME:?HOME must be set}/.ollama/models
+        target: /root/.ollama/models
+        read_only: true
+        bind:
+          create_host_path: false
+    restart: unless-stopped
+
+  mcp:
+    image: ${MCP_IMAGE:-frappe-mcp-server:local}
+    logging: *logging
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    pull_policy: never
+    environment:
+      FRAPPE_BASE_URL: http://frontend:8080
+    volumes:
+      - type: bind
+        source: ./mcp/config.yaml
+        target: /app/config.yaml
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      - frontend
+    restart: unless-stopped
+
+  agent:
+    image: ${AGENT_IMAGE:-frappe-ai-agent:local}
+    logging: *logging
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    pull_policy: never
+    environment:
+      AI_AGENT_MCP_SERVER_URL: http://mcp:8080/mcp
+      AI_AGENT_FRAPPE_URL: http://frontend:8080
+      AI_AGENT_CORS_ORIGINS: '["http://${SITE_NAME:-demo.localhost}:${HTTP_PUBLISH_PORT:-8080}"]'
+      AI_AGENT_LLM_BASE_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      AI_AGENT_LLM_MODEL: ${AI_MODEL:-gemma4:26b}
+      AI_AGENT_LLM_NUM_CTX: ${AI_NUM_CTX:-65536}
+    healthcheck:
+      test: ["CMD", "/app/.venv/bin/python", "-c", "import httpx; httpx.get('http://localhost:8484/health').raise_for_status()"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+    # Docker Desktop names the host itself; Linux needs host-gateway, and the host's Ollama must
+    # listen beyond loopback there (OLLAMA_HOST=0.0.0.0)
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    depends_on:
+      mcp:
+        condition: service_started
+      ollama:
+        condition: service_started
+        required: false
+    restart: unless-stopped
+
+  # from frappe_docker's overrides/compose.redis.yaml
+  redis-cache:
+    logging: *logging
+  redis-queue:
+    logging: *logging

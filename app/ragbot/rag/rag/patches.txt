@@ -1,0 +1,4 @@
+[pre_model_sync]
+
+[post_model_sync]
+rag.patches.drop_kb_chunk_team

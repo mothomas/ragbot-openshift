@@ -1,0 +1,50 @@
+{{- if eq (include "ragbot.role" .) "onprem" }}
+{{- $lb := .Values.onprem.frontend.loadBalancer }}
+{{- if $lb.enabled }}
+{{- if not (has (int $lb.port) (list 8080 6443)) }}
+{{- fail (printf "onprem.frontend.loadBalancer.port must be 8080 or 6443, got %v" $lb.port) }}
+{{- end }}
+{{- if not (or $lb.ip $lb.hostnames) }}
+{{- fail "onprem.frontend.loadBalancer: set ip and/or hostnames. Frappe picks the site from the Host header, so an address it has no alias for answers 404." }}
+{{- end }}
+# MetalLB address in front of frappe-operator's nginx pods. The operator owns
+# ragbot-nginx (ClusterIP); this is a second Service on the same pods, so the
+# operator never reconciles it away.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.onprem.bench.name }}-frontend-lb
+  labels:
+    {{- include "ragbot.labels" . | nindent 4 }}
+    app.kubernetes.io/name: frontend-lb
+  annotations:
+    {{- with $lb.addressPool }}
+    metallb.universe.tf/address-pool: {{ . }}
+    {{- end }}
+    {{- with $lb.ip }}
+    metallb.universe.tf/loadBalancerIPs: {{ . }}
+    {{- end }}
+    {{- with $lb.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: {{ $lb.externalTrafficPolicy }}
+  # The operator's own labels on its nginx pods (componentLabels in frappebench_helpers.go).
+  selector:
+    app: frappe
+    bench: {{ .Values.onprem.bench.name }}
+    component: nginx
+  ports:
+    - name: http
+      port: {{ $lb.port }}
+      targetPort: 8080
+      protocol: TCP
+    {{- if $lb.realtimeAuthPort }}
+    - name: realtime-auth
+      port: {{ $lb.realtimeAuthPort }}
+      targetPort: 8080
+      protocol: TCP
+    {{- end }}
+{{- end }}
+{{- end }}

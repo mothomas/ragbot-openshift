@@ -1,0 +1,16 @@
+{
+  // markdownlint's defaults, minus MD013: line length is a prose decision, not a structural one.
+  "config": { "default": true, "MD013": false },
+  // command-line globs add to these, so a gate that names one file still lints every document.
+  "globs": ["**/*.md"],
+  "ignores": [
+    ".build/**",
+    "docs/**",
+    "frappe-operator/**",
+    "graphify-out/**",
+    "**/node_modules/**",
+    // Playwright writes error-context.md into these on a failed run: generated output, not a document
+    "**/test-results/**",
+    "**/playwright-report/**"
+  ]
+}

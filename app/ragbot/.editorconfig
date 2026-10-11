@@ -1,0 +1,35 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# frappe indents Python with tabs, and rag/pyproject.toml's ruff settings follow it
+[rag/rag/**.py]
+indent_style = tab
+
+# the system checks are a standalone harness, not a frappe app
+[tests/system/*.py]
+indent_style = space
+indent_size = 4
+
+[Makefile]
+indent_style = tab
+
+[*.{ts,tsx,mjs,json,yml,yaml}]
+indent_style = space
+indent_size = 2
+
+# bench writes a DocType schema with a one-space indent
+[rag/rag/**/doctype/**/*.json]
+indent_size = 1
+
+# two trailing spaces are a line break in markdown
+[*.md]
+trim_trailing_whitespace = false
+
+# a fixture that is deliberately not utf-8: ingest has to read it in its own code page
+[rag/rag/tests/data/*.sjis.txt]
+charset = unset

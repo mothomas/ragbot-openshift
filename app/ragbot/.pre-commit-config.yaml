@@ -1,0 +1,102 @@
+# Install with `uvx pre-commit install`. These are the fast gates; CI runs the same tools,
+# and `make check` runs the ones that need the stack up.
+minimum_pre_commit_version: "4.0.0"
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: check-yaml
+        # the compose files carry compose's own !reset tag, which no YAML loader knows
+        args: [--unsafe]
+      - id: check-json
+        exclude: \.jsonc$
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.8
+    hooks:
+      - id: ruff-check
+        files: ^rag/(rag|tools)/
+      - id: ruff-format
+        files: ^rag/(rag|tools)/
+
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.23.3
+    hooks:
+      - id: markdownlint-cli2
+
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.15.1
+    hooks:
+      - id: hadolint-docker
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: v1.30.1
+    hooks:
+      - id: zizmor
+        args: [--offline]
+
+  # eslint, tsc, vitest, knip and jscpd need `yarn --cwd rag install` first, so they stay in
+  # CI's Metis job rather than blocking a commit on a fresh clone.
+  - repo: local
+    hooks:
+      - id: import-linter
+        name: module boundaries (import-linter)
+        # the contract resolves from rag/, where the package and pyproject.toml are
+        entry: sh -c 'cd rag && uvx --quiet --from import-linter lint-imports --no-logo --config .importlinter'
+        language: system
+        files: ^rag/(rag/.*\.py|\.importlinter)$
+        pass_filenames: false
+
+      # PEP 758 lets `except A, B:` go unparenthesised and rag uses it, so a tool that parses
+      # with its own interpreter needs 3.14 pinned: an older one skips those files and exits 0.
+      - id: vulture
+        name: dead code (vulture)
+        entry: sh -c 'cd rag && uvx --quiet --python 3.14 vulture rag'
+        language: system
+        files: ^rag/(rag/.*\.py|pyproject\.toml)$
+        pass_filenames: false
+
+      - id: xenon
+        name: complexity budget (xenon)
+        entry: sh -c 'cd rag && uvx --quiet --python 3.14 xenon --max-absolute C --max-modules B --max-average A rag'
+        language: system
+        files: ^rag/rag/.*\.py$
+        pass_filenames: false
+
+      - id: deptry
+        name: declared dependencies match imports (deptry)
+        entry: sh -c 'cd rag && uvx --quiet deptry rag --known-first-party rag'
+        language: system
+        files: ^rag/(rag/.*\.py|pyproject\.toml)$
+        pass_filenames: false
+
+      # ast-based too, so without the same pin it dies on rag's unparenthesised `except A, B:`
+      - id: docstrings
+        name: "docstrings: a summary line and its sections; JSDoc: under four lines"
+        entry: uv run --quiet --python 3.14 --no-project rag/tools/lint_docstrings.py
+        language: system
+        files: ^rag/((rag|tools)/.*\.py|frontend/.*\.tsx?)$
+
+      - id: pyrefly
+        name: type check (pyrefly)
+        entry: sh -c 'cd rag && uvx --quiet pyrefly check rag'
+        language: system
+        files: ^rag/(rag/.*\.py|pyproject\.toml)$
+        pass_filenames: false
+
+      - id: bandit
+        name: bandit
+        entry: uvx --quiet --python 3.14 bandit -q -r -ll rag/rag
+        language: system
+        files: ^rag/rag/.*\.py$
+        pass_filenames: false

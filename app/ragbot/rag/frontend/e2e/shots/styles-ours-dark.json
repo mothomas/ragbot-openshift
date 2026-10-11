@@ -1,0 +1,46 @@
+{
+  "body": {
+    "font-family": "-apple-system, BlinkMacSystemFont, \"Inter Variable\", ui-sans-serif, system-ui, sans-serif",
+    "font-size": "16px",
+    "line-height": "24px",
+    "color": "lab(93.04 0.0000298023 -0.0000119209)",
+    "background-color": "lab(7.22637 -0.0000149012 0)",
+    "border-radius": "0px",
+    "padding": "0px",
+    "box-shadow": "none",
+    "width": 1440
+  },
+  "prose": {
+    "font-family": "-apple-system, BlinkMacSystemFont, \"Inter Variable\", ui-sans-serif, system-ui, sans-serif",
+    "font-size": "15px",
+    "line-height": "24.375px",
+    "color": "lab(85.1236 -0.612259 -3.7138)",
+    "background-color": "rgba(0, 0, 0, 0)",
+    "border-radius": "0px",
+    "padding": "0px",
+    "box-shadow": "none",
+    "width": 860
+  },
+  "bubble": {
+    "font-family": "-apple-system, BlinkMacSystemFont, \"Inter Variable\", ui-sans-serif, system-ui, sans-serif",
+    "font-size": "16px",
+    "line-height": "24px",
+    "color": "lab(93.04 0.0000298023 -0.0000119209)",
+    "background-color": "lab(15.32 0 0)",
+    "border-radius": "24px",
+    "padding": "6px 16px",
+    "box-shadow": "none",
+    "width": 225
+  },
+  "composer": {
+    "font-family": "-apple-system, BlinkMacSystemFont, \"Inter Variable\", ui-sans-serif, system-ui, sans-serif",
+    "font-size": "16px",
+    "line-height": "24px",
+    "color": "lab(93.04 0.0000298023 -0.0000119209)",
+    "background-color": "oklab(0.689998 -0.00000679493 0.0000160933 / 0.05)",
+    "border-radius": "24px",
+    "padding": "10px 16px",
+    "box-shadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.1) 0px 10px 15px -3px, rgba(0, 0, 0, 0.1) 0px 4px 6px -4px",
+    "width": 912
+  }
+}

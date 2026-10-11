@@ -1,0 +1,5 @@
+.next/
+out/
+node_modules/
+tsconfig.tsbuildinfo
+e2e/

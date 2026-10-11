@@ -1,0 +1,44 @@
+# Apply on the ACM hub, in the namespace of the central Argo CD.
+#
+# Label the two ManagedClusters first:
+#   oc label managedcluster <onprem-cluster> ragbot.io/role=onprem
+#   oc label managedcluster <rosa-cluster>   ragbot.io/role=rosa
+#
+# Both clusters must be in the ManagedClusterSet bound below, and already
+# registered with this Argo CD through a GitOpsCluster (yours presumably exists;
+# gitopscluster.yaml is there if not).
+apiVersion: cluster.open-cluster-management.io/v1beta2
+kind: ManagedClusterSetBinding
+metadata:
+  name: default            # CHANGE-ME: the cluster set holding both clusters
+  namespace: openshift-gitops
+spec:
+  clusterSet: default      # CHANGE-ME
+---
+apiVersion: cluster.open-cluster-management.io/v1beta1
+kind: Placement
+metadata:
+  name: ragbot-onprem
+  namespace: openshift-gitops
+spec:
+  clusterSets: [default]   # CHANGE-ME
+  numberOfClusters: 1
+  predicates:
+    - requiredClusterSelector:
+        labelSelector:
+          matchLabels:
+            ragbot.io/role: onprem
+---
+apiVersion: cluster.open-cluster-management.io/v1beta1
+kind: Placement
+metadata:
+  name: ragbot-rosa
+  namespace: openshift-gitops
+spec:
+  clusterSets: [default]   # CHANGE-ME
+  numberOfClusters: 1
+  predicates:
+    - requiredClusterSelector:
+        labelSelector:
+          matchLabels:
+            ragbot.io/role: rosa

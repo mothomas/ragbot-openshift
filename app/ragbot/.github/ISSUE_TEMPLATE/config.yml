@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a vulnerability
+    url: https://github.com/tssarathi/ragbot/security/advisories/new
+    about: Security problems go through a private advisory, never a public issue.
+  - name: Frappe, ERPNext or Frappe Drive
+    url: https://github.com/frappe/frappe/issues
+    about: ragbot builds on these but does not contain them.
+  - name: How to propose a change
+    url: https://github.com/tssarathi/ragbot/blob/main/CONTRIBUTING.md
+    about: Read this before opening an issue for anything larger than a fix.

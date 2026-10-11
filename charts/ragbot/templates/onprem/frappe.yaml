@@ -1,0 +1,94 @@
+{{- if eq (include "ragbot.role" .) "onprem" }}
+{{- $o := .Values.onprem }}
+{{- $b := $o.bench }}
+apiVersion: vyogo.tech/v1
+kind: FrappeBench
+metadata:
+  name: {{ $b.name }}
+  labels:
+    {{- include "ragbot.labels" . | nindent 4 }}
+  annotations:
+    {{- include "ragbot.wave" "1" | nindent 4 }}
+spec:
+  frappeVersion: "16"
+  imageConfig:
+    repository: {{ .Values.images.bench.repository }}
+    tag: {{ .Values.images.bench.tag | quote }}
+    pullPolicy: {{ .Values.images.pullPolicy }}
+    {{- with .Values.images.pullSecrets }}
+    pullSecrets:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  # Shipped in the image; the site's `apps` list is what installs them.
+  apps:
+    {{- range $o.site.apps }}
+    - name: {{ . }}
+      source: image
+    {{- end }}
+  storageClassName: {{ $b.storageClassName }}
+  storageSize: {{ $b.storageSize }}
+  {{- if $b.indexWorker.enabled }}
+  # Values that parse as JSON are written as JSON (operator: commonSiteConfigJSON).
+  commonSiteConfig:
+    workers: {{ dict "index" (dict "timeout" (int $b.indexWorker.timeout)) | toJson | quote }}
+  {{- end }}
+  componentAutoscaling:
+    {{- range $name, $n := $b.replicas }}
+    {{ $name }}:
+      enabled: false
+      staticReplicas: {{ $n }}
+    {{- end }}
+---
+apiVersion: vyogo.tech/v1
+kind: FrappeSite
+metadata:
+  name: {{ $o.site.name }}
+  labels:
+    {{- include "ragbot.labels" . | nindent 4 }}
+  annotations:
+    {{- include "ragbot.wave" "2" | nindent 4 }}
+spec:
+  benchRef:
+    name: {{ $b.name }}
+  # A real FQDN is used as-is (no auto-correction), so the site directory,
+  # the Route host and the agent's CORS origin all agree.
+  siteName: {{ $o.siteHost }}
+  # Immutable once the site exists.
+  apps:
+    {{- toYaml $o.site.apps | nindent 4 }}
+  dbConfig:
+    provider: mariadb
+    mode: shared
+    mariadbRef:
+      name: {{ $o.mariadb.name }}
+  routeConfig:
+    enabled: {{ $o.frontend.route.enabled }}
+    {{- if $o.frontend.route.enabled }}
+    host: {{ $o.siteHost }}
+    tlsTermination: {{ $o.frontend.route.tlsTermination }}
+    {{- end }}
+---
+apiVersion: vyogo.tech/v1
+kind: SiteConfig
+metadata:
+  name: {{ $o.site.name }}
+  labels:
+    {{- include "ragbot.labels" . | nindent 4 }}
+  annotations:
+    {{- include "ragbot.wave" "3" | nindent 4 }}
+spec:
+  siteRef:
+    name: {{ $o.site.name }}
+  # JSON-looking values (1, true) are applied with `set-config -p`.
+  customConfig:
+    # Where Frappe's chat relay reaches the agent (server side, in-cluster).
+    frappe_ai_agent_url: "http://ragbot-agent:{{ $o.agent.port }}"
+    # The agent is on a private address; frappe_ai refuses one without this.
+    frappe_ai_agent_url_unsafe_ok: "1"
+    # rag embeds on the on-prem CPU Ollama, not across the link.
+    rag_ollama_url: "http://ollama-embed:11434"
+    rag_embed_model: {{ .Values.embed.model | quote }}
+    {{- if $o.site.monitor }}
+    monitor: "1"
+    {{- end }}
+{{- end }}

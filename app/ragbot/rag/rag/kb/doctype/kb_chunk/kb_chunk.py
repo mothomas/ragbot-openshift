@@ -1,0 +1,53 @@
+import click
+import frappe
+from frappe import _
+from frappe.model.document import Document
+
+
+class KBChunk(Document):
+	pass
+
+
+def on_doctype_update():
+	"""Add the vector column kb_chunk.json must never declare, as schema sync would make a DocField longtext."""
+	from rag.ingest import EMBED_DIM, health
+
+	# Nullable here, NOT NULL below: ADD COLUMN ... NOT NULL zero-fills existing rows silently,
+	# and a zero vector is the nearest neighbour of every query. Only MODIFY refuses.
+	frappe.db.sql_ddl(f"ALTER TABLE `tabKB Chunk` ADD COLUMN IF NOT EXISTS embedding VECTOR({EMBED_DIM})")
+
+	declared = frappe.db.sql(
+		"SELECT COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()"
+		" AND TABLE_NAME = 'tabKB Chunk' AND COLUMN_NAME = 'embedding'"
+	)
+	if declared and declared[0][0].lower() != f"vector({EMBED_DIM})":
+		# ADD COLUMN skips an existing column and MariaDB cannot redeclare a vector's width: without
+		# this every insert fails with "Incorrect vector value" while migrate and health report success.
+		frappe.throw(
+			_(
+				"`embedding` is {0}, not vector({1}): drop the column, migrate again, then run rag.ingest.reindex_all."
+			).format(declared[0][0], EMBED_DIM)
+		)
+
+	for problem in health()["problems"]:
+		click.secho(f"KB Chunk: {problem}", fg="yellow")
+
+	if frappe.db.sql("SELECT 1 FROM `tabKB Chunk` WHERE embedding IS NULL LIMIT 1"):
+		return  # MODIFY would refuse, and an index built now would miss those rows
+	if _nullable():
+		# skipped once applied: MODIFY rebuilds the table and the vector index with it
+		frappe.db.sql_ddl(f"ALTER TABLE `tabKB Chunk` MODIFY embedding VECTOR({EMBED_DIM}) NOT NULL")
+	# Must be named `embedding`: IF NOT EXISTS matches on name and MariaDB allows one vector
+	# index per table, so M and DISTANCE are immutable after the first deploy.
+	frappe.db.sql_ddl(
+		"ALTER TABLE `tabKB Chunk` ADD VECTOR INDEX IF NOT EXISTS embedding (embedding) M=16 DISTANCE=cosine"
+	)
+
+
+def _nullable() -> bool:
+	return bool(
+		frappe.db.sql(
+			"SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()"
+			" AND TABLE_NAME = 'tabKB Chunk' AND COLUMN_NAME = 'embedding' AND IS_NULLABLE = 'YES'"
+		)
+	)

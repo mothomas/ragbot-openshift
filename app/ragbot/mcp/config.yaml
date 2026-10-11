@@ -1,0 +1,24 @@
+server:
+  port: 8080
+
+# base_url is not set here: compose sets FRAPPE_BASE_URL, which config.go always prefers
+erpnext:
+  timeout: "30s"
+  retry:
+    max_attempts: 5
+    initial_delay: "500ms"
+
+# The sidebar forwards the caller's sid, and the client prefers it over every other
+# credential, so each tool call runs as that user. Without this block the server logs
+# "Authentication disabled", ignores the sid and falls back to system-level credentials.
+auth:
+  enabled: true
+  require_auth: true
+  oauth2:
+    issuer_url: "http://frontend:8080"
+    token_info_url: "http://frontend:8080/api/method/frappe.integrations.oauth2.openid_profile"
+    validate_remote: true
+
+# search_knowledge_base answers from rag, which this stack installs; a site without rag sets TOOLS_KNOWLEDGE_BASE=false
+tools:
+  knowledge_base: true

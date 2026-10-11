@@ -1,0 +1,5 @@
+# MariaDB 11.8 turns innodb_snapshot_isolation on by default. Frappe writes last_login to tabUser
+# inside a savepoint on every login; ER_CHECKREAD (1020) rolls the whole transaction back, the
+# savepoint with it, and the second concurrent login of one user 500s on 1305 (ADR-016).
+[mariadbd]
+innodb_snapshot_isolation = OFF

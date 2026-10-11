@@ -1,0 +1,39 @@
+name: Change or addition
+description: Propose a change to how the stack behaves, or something it should do.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ragbot is a demonstration stack. A change earns its place by making the demo
+        truer or simpler, not by adding a feature.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What is hard or wrong today, for whom, and how often. Not the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+      description: The smallest change that solves it, and what it would touch.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you considered instead
+      description: Including doing nothing, and why that is not enough.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checked
+    attributes:
+      label: Before opening this
+      options:
+        - label: Frappe, ERPNext, Drive or Ollama does not already do this.
+          required: true
+        - label: I searched the open issues and discussions.
+          required: true

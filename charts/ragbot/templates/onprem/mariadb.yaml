@@ -1,0 +1,42 @@
+{{- if eq (include "ragbot.role" .) "onprem" }}
+{{- $db := .Values.onprem.mariadb }}
+apiVersion: k8s.mariadb.com/v1alpha1
+kind: MariaDB
+metadata:
+  name: {{ $db.name }}
+  labels:
+    {{- include "ragbot.labels" . | nindent 4 }}
+  annotations:
+    {{- include "ragbot.wave" "0" | nindent 4 }}
+spec:
+  # 11.7+ for the VECTOR column rag's KB Chunk uses.
+  image: {{ $db.image }}
+  rootPasswordSecretKeyRef:
+    name: {{ $db.rootPasswordSecret }}
+    key: password
+    generate: true
+  port: 3306
+  replicas: 1
+  storage:
+    size: {{ $db.storageSize }}
+    {{- with $db.storageClassName }}
+    storageClassName: {{ . }}
+    {{- end }}
+  resources:
+    {{- toYaml $db.resources | nindent 4 }}
+  myCnf: |
+    [mariadb]
+    bind-address=*
+    default_storage_engine=InnoDB
+    innodb_file_per_table=1
+    max_allowed_packet=256M
+    character-set-client-handshake=FALSE
+    character-set-server=utf8mb4
+    collation-server=utf8mb4_unicode_ci
+    # 11.8+ defaults this ON; Frappe's last_login savepoint then makes a second
+    # concurrent login of one user fail with 1305 (ragbot ADR-016).
+    innodb_snapshot_isolation=OFF
+
+    [client]
+    default-character-set=utf8mb4
+{{- end }}

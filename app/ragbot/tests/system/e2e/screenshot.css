@@ -1,0 +1,21 @@
+/* Applied only while a baseline screenshot is taken (Playwright's stylePath). Everything here
+   changes between runs, and masking it would not help: a mask covers an element's box, so a
+   narrower reading still moves the pixels around it. These rules take the content out of the
+   picture and leave the box the same size. */
+
+/* the round trip to the agent, re-read every second; "3.4 ms" and "128 ms" are different widths */
+main > header .tabular-nums {
+  visibility: hidden;
+  display: inline-block;
+  width: 3.5rem;
+}
+
+/* which chats exist, and how long ago, depends on what ran against the site before this */
+nav[aria-label="Chat history"] section {
+  visibility: hidden;
+}
+
+/* the same, for the conversation in the frappe_ai sidebar */
+#frappe-ai-sidebar-root .frappe-ai-messages > * {
+  visibility: hidden;
+}

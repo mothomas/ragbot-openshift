@@ -1,0 +1,86 @@
+{
+ "_about": [
+  "A frozen retrieval eval set shaped the way BEIR's loader hands one to a scorer -- corpus {id: {title,",
+  "text}}, queries {id: text}, qrels {query id: {doc id: grade}} (Thakur et al., NeurIPS 2021 Datasets and",
+  "Benchmarks, https://openreview.net/forum?id=wCu6T5xFjeJ). It is one JSON file, not BEIR's three on-disk",
+  "files, so it is the shape and not the format. retrieval.py seeds `corpus` onto the test site as Drive",
+  "documents, asks `queries` through rag.search.search, and scores what comes back against `qrels`. A grade",
+  "is 1 unless stated, and a document not listed is not relevant to that question.",
+  "",
+  "The corpus is the demo site's own seven policy documents, copied verbatim so the check measures the",
+  "corpus the product is demonstrated on. Every question and every qrel was written by reading those",
+  "documents, not by running a search: several questions deliberately use the vocabulary of a document",
+  "that does NOT answer them (q01 says 'travelling' but is answered by the expense policy, q04 and q05 say",
+  "'expense' but are answered by the reimbursement policy), because a question whose answer is also its",
+  "nearest keyword match measures nothing.",
+  "",
+  "q13 is the one graded question: the reimbursement policy answers 'by when' outright (2), while the",
+  "expense and travel policies each answer part of 'what' (1). Without a graded question nothing would",
+  "exercise nDCG's gain term at all -- with one relevant document per question the numerator is the same",
+  "1 at every rank -- and one question with three answers is also the only thing here that can tell a",
+  "reordering of the top three from a miss.",
+  "",
+  "Ceiling: seven documents and thirteen questions. This size catches a retriever that has broken, been",
+  "pointed at the wrong model, or lost its permission filter. It cannot separate two working rankers."
+ ],
+ "corpus": {
+  "expense-policy.txt": {
+   "title": "Expense policy",
+   "text": "Expense policy: meals capped at 45 AUD per day.\n"
+  },
+  "parental-leave.txt": {
+   "title": "Parental Leave Policy",
+   "text": "Parental Leave Policy\n\nPrimary carers receive 18 weeks of paid parental leave at full pay.\n\nSecondary carers receive 4 weeks. Leave must commence within 12 months of the birth or adoption.\n"
+  },
+  "reimbursement-policy.txt": {
+   "title": "Reimbursement Policy",
+   "text": "L2X Technologies Pty Ltd\n\nReimbursement Policy\n\nClaims must be submitted within 30 days of the expense date.\n\nPage two: approvals above 200 AUD need a manager signature.\n"
+  },
+  "remote-work.txt": {
+   "title": "Remote Work Policy",
+   "text": "Remote Work Policy\n\nStaff may work remotely up to three days per week.\n\nFully remote arrangements require written approval from a department head and a home office allowance of 600 AUD applies.\n"
+  },
+  "security-policy.txt": {
+   "title": "Security Policy",
+   "text": "Security Policy\n\nLost or stolen laptops must be reported to the security desk within 4 hours.\n\nThe replacement excess for a lost laptop is 250 AUD.\n"
+  },
+  "travel-policy.txt": {
+   "title": "Travel policy",
+   "text": "Travel policy: economy under four hours. Café receipts accepted.\n"
+  },
+  "vehicle-policy.txt": {
+   "title": "Vehicle policy",
+   "text": "Vehicle policy: mileage reimbursed at 88 cents per kilometre.\n"
+  }
+ },
+ "queries": {
+  "q01": "What is the daily limit on meals while I am travelling?",
+  "q02": "How much paid leave does a primary carer get?",
+  "q03": "Can a secondary carer take paid leave, and for how long?",
+  "q04": "How many days after paying for something do I have to file the claim?",
+  "q05": "Does a large expense claim need someone to sign it off?",
+  "q06": "How often am I allowed to work from home?",
+  "q07": "Is there money towards a desk and chair at home?",
+  "q08": "My laptop was stolen, how quickly must I tell someone?",
+  "q09": "What do I have to pay myself if a laptop is lost?",
+  "q10": "Which cabin am I booked in for a two hour flight?",
+  "q11": "What do I get back per kilometre for driving my own car?",
+  "q12": "By when must parental leave start after a birth?",
+  "q13": "What can I claim back after a work trip, and by when?"
+ },
+ "qrels": {
+  "q01": {"expense-policy.txt": 1},
+  "q02": {"parental-leave.txt": 1},
+  "q03": {"parental-leave.txt": 1},
+  "q04": {"reimbursement-policy.txt": 1},
+  "q05": {"reimbursement-policy.txt": 1},
+  "q06": {"remote-work.txt": 1},
+  "q07": {"remote-work.txt": 1},
+  "q08": {"security-policy.txt": 1},
+  "q09": {"security-policy.txt": 1},
+  "q10": {"travel-policy.txt": 1},
+  "q11": {"vehicle-policy.txt": 1},
+  "q12": {"parental-leave.txt": 1},
+  "q13": {"reimbursement-policy.txt": 2, "expense-policy.txt": 1, "travel-policy.txt": 1}
+ }
+}

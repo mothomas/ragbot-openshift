@@ -1,0 +1,28 @@
+# Only if the two clusters are not yet registered with the central Argo CD.
+# Registers every cluster the Placement selects as an Argo CD cluster secret.
+apiVersion: cluster.open-cluster-management.io/v1beta1
+kind: Placement
+metadata:
+  name: ragbot-all
+  namespace: openshift-gitops
+spec:
+  clusterSets: [default]   # CHANGE-ME
+  predicates:
+    - requiredClusterSelector:
+        labelSelector:
+          matchExpressions:
+            - {key: ragbot.io/role, operator: In, values: [onprem, rosa]}
+---
+apiVersion: apps.open-cluster-management.io/v1beta1
+kind: GitOpsCluster
+metadata:
+  name: ragbot
+  namespace: openshift-gitops
+spec:
+  argoServer:
+    cluster: local-cluster
+    argoNamespace: openshift-gitops
+  placementRef:
+    kind: Placement
+    apiVersion: cluster.open-cluster-management.io/v1beta1
+    name: ragbot-all

@@ -1,0 +1,15 @@
+[importlinter]
+root_package = rag
+
+[importlinter:contract:metis-on-top]
+name = Metis sits on rag's core, and the core never imports Metis
+type = layers
+containers =
+    rag
+layers =
+    www
+    chat | library | preview | status
+    search
+    kb
+    ingest
+    hooks

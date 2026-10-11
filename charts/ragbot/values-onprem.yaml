@@ -1,0 +1,122 @@
+role: onprem
+
+onprem:
+  # The site's public name. Must be a real FQDN that resolves to this cluster's
+  # router: a host under the cluster's wildcard (*.apps.<cluster-domain>) works
+  # with no DNS work. The operator creates the site directory under this name.
+  siteHost: ragbot.apps.onprem.example.com
+
+  # ---- MariaDB (MariaDB Operator) -------------------------------------------
+  mariadb:
+    name: ragbot-mariadb
+    # 11.7+ is required for VECTOR; ragbot pins 12.3.3.
+    image: docker.io/library/mariadb:12.3.3
+    storageClassName: ""          # empty = cluster default (RWO is fine)
+    storageSize: 50Gi
+    resources:
+      requests: {cpu: 500m, memory: 2Gi}
+      limits: {cpu: "2", memory: 4Gi}
+    # The operator generates the root password into this Secret when absent.
+    rootPasswordSecret: ragbot-mariadb-root
+
+  # ---- Frappe (frappe-operator) ---------------------------------------------
+  bench:
+    name: ragbot
+    # The sites volume is mounted by every bench component: it must be RWX.
+    # ODF: ocs-storagecluster-cephfs (or ocs-external-storagecluster-cephfs).
+    storageClassName: ocs-storagecluster-cephfs
+    storageSize: 20Gi
+    replicas:
+      gunicorn: 1
+      nginx: 1
+      socketio: 1
+      scheduler: 1
+      worker-default: 1
+      worker-short: 1
+      worker-long: 1
+    # ragbot gives indexing its own queue so uploads don't delay chat relay jobs.
+    # The operator only runs default/short/long workers, so enabling this adds
+    # a chart-owned Deployment for the index queue AND declares the queue in
+    # common_site_config. Off: rag sees no index queue and falls back to long.
+    indexWorker:
+      enabled: false
+      replicas: 1
+      timeout: 1500
+
+  site:
+    name: ragbot
+    apps: [erpnext, drive, frappe_ai, rag]
+
+  # ---- How users reach the site ---------------------------------------------
+  frontend:
+    # OpenShift Route via the cluster router: https://<siteHost>
+    route:
+      enabled: true
+      tlsTermination: edge
+    # MetalLB LoadBalancer in front of the operator's nginx (plain HTTP).
+    loadBalancer:
+      enabled: true
+      # External port; nginx listens on 8080 inside. 8080 or 6443.
+      port: 8080
+      # Pin an address from the pool. Recommended: DNS and the Frappe alias
+      # below need a stable address. Must not be the cluster API VIP.
+      ip: ""
+      # MetalLB IPAddressPool to draw from; empty = MetalLB's default.
+      addressPool: ""
+      # Names (or the bare IP) users type in the browser. Frappe picks the site
+      # from the Host header, so each gets an alias to the site, and the first
+      # is the agent's CORS origin. Point DNS for each at `ip`.
+      hostnames:
+        - ragbot.onprem.example.com     # CHANGE-ME
+      # Frappe's realtime authorises a socket by fetching its Origin back
+      # without the port, i.e. on :80 (ragbot's nginx-realtime-auth.conf).
+      # Exposing 80 -> nginx too makes that fetch land. 0 disables.
+      realtimeAuthPort: 80
+      externalTrafficPolicy: Cluster
+      annotations: {}
+    # Monitor gives every request a trace id (ragbot ADR-008).
+    monitor: true
+
+  # ---- AI services (on-prem side) --------------------------------------------
+  agent:
+    replicas: 1
+    port: 8484
+    # One model call's bound (agent default 60). Raised for the WAN hop, but kept
+    # under the agent's 90 s turn bound, which sits inside frappe_ai's 120 s.
+    requestTimeoutS: 75
+    extraEnv: []
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {cpu: "1", memory: 1Gi}
+
+  mcp:
+    replicas: 1
+    port: 8080
+    resources:
+      requests: {cpu: 50m, memory: 64Mi}
+      limits: {cpu: 500m, memory: 256Mi}
+
+  # CPU Ollama for embeddings only. Every chunk of every document is embedded
+  # here, so document text stays on-prem in bulk.
+  embed:
+    replicas: 1
+    resources:
+      requests: {cpu: "1", memory: 2Gi}
+      limits: {cpu: "4", memory: 4Gi}
+
+  # Post-sync Job: waits for the site, aliases the internal Service name so
+  # in-cluster callers reach the site, and applies ragbot's one DB setting.
+  postSetup:
+    enabled: true
+    # Minutes to wait for the operator to finish creating the site.
+    waitMinutes: 45
+
+  skupper:
+    siteName: ragbot-onprem
+    # Optional: redeem a token issued on ROSA declaratively. Leave empty and use
+    # the CLI runbook instead, or inject these from a secret manager. Do NOT
+    # commit real values: the code is a credential.
+    accessToken:
+      url: ""
+      code: ""
+      ca: ""

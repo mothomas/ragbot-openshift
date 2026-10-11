@@ -1,0 +1,5 @@
+.build/
+*.tgz
+.DS_Store
+# per-cluster overrides may hold addresses you'd rather not publish
+charts/ragbot/values-cluster-*.local.yaml

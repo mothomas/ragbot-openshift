@@ -1,0 +1,224 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Open WebUI v0.11.3's chroma-0 grey scale (its tailwind.css), reproduced as values */
+@theme {
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "Inter Variable", ui-sans-serif,
+    system-ui, sans-serif;
+  --color-gray-50: oklch(0.98 0 0);
+  --color-gray-100: oklch(0.94 0 0);
+  --color-gray-200: oklch(0.92 0 0);
+  --color-gray-300: oklch(0.85 0 0);
+  --color-gray-400: oklch(0.77 0 0);
+  --color-gray-500: oklch(0.69 0 0);
+  --color-gray-600: oklch(0.51 0 0);
+  --color-gray-700: oklch(0.42 0 0);
+  --color-gray-800: oklch(0.32 0 0);
+  --color-gray-850: oklch(0.27 0 0);
+  --color-gray-900: oklch(0.2 0 0);
+  --color-gray-950: oklch(0.16 0 0);
+  --color-series-1: #2a78d6;
+  --color-series-2: #eb6834;
+  --color-series-3: #1baf7a;
+  /* an answer's speed against reading speed, checked for 3:1 on the card and for colour-blind
+     readers (red-600 sat too close to amber-600 even for normal vision, so red-700) */
+  --color-pace-fast: #666666;
+  --color-pace-read: #d97706;
+  --color-pace-slow: #b91c1c;
+  /* the interface's own colours, measured on the surfaces they land on, not on white:
+     groups mark the sidebar's gray-50, types tint an icon on the documents hover, both
+     non-text at 3:1; states are the chip's own text at 4.5:1, so the working blue and the
+     done green are darker than --color-series-1 and -3, which measure 4.42:1 and 2.82:1 */
+  --color-group-today: #12805a;
+  --color-group-1d: #2a78d6;
+  --color-group-7d: #c2521f;
+  --color-state-working: #1265c2;
+  --color-state-done: #007550;
+  --color-state-stuck: #b91c1c;
+  --color-type-pdf: #b91c1c;
+  --color-type-doc: #2a78d6;
+  --color-type-sheet: #12805a;
+  --color-type-slides: #c2521f;
+  --color-type-other: var(--color-gray-600);
+  /* each platform's own published blue, so its mark keeps its colour instead of the text's */
+  --color-brand-docker: #1d63ed;
+  --color-brand-kubernetes: #326ce5;
+  --animate-grow: grow 300ms ease-out;
+  --animate-slide-in: slide-in 200ms ease-out;
+  /* Open WebUI's Drawer: in:fly={{ y: 100, duration: 100 }} */
+  --animate-sheet-up: sheet-up 100ms ease-out;
+  @keyframes sheet-up {
+    from {
+      transform: translateY(100px);
+      opacity: 0;
+    }
+  }
+  @keyframes grow {
+    from {
+      transform: scaleY(0);
+    }
+  }
+  /* one slot of twenty, with its 2px gap */
+  @keyframes slide-in {
+    from {
+      transform: translateX(calc((100% + 2px) / 20));
+    }
+  }
+}
+
+/* chart text and surfaces in the app's own greys */
+:root {
+  /* the left sidebar at Open WebUI's default; the status panel at the narrowest that keeps
+     its longest rows whole on one line, measured */
+  --sidebar-width: 245px;
+  /* the sidebar collapsed to its rail; named here rather than written on the rail so the first view Frappe
+     serves can stand in for it at the same width */
+  --rail-width: 42px;
+  --panel-width: 280px;
+  --chart-text: var(--color-gray-900);
+  --chart-ink: var(--color-gray-600);
+  --chart-grid: var(--color-gray-100);
+  --chart-surface: var(--color-white);
+}
+
+/* the chart palette's dark steps, validated against the dark surface */
+.dark {
+  --color-pace-fast: #b3b3b3;
+  --color-pace-read: #fbbf24;
+  --color-pace-slow: #f87171;
+  --color-series-1: #3987e5;
+  --color-series-2: #d95926;
+  --color-series-3: #199e70;
+  /* the same interface colours on the dark surfaces; state-working is lighter than
+     --color-series-1, which measures 4.16:1 as text on the file chip's gray-850 */
+  --color-group-today: #34d399;
+  --color-group-1d: #3987e5;
+  --color-group-7d: #fb923c;
+  --color-state-working: #4a98f7;
+  --color-state-done: #34d399;
+  --color-state-stuck: #f87171;
+  --color-type-pdf: #f87171;
+  --color-type-doc: #3987e5;
+  --color-type-sheet: #34d399;
+  --color-type-slides: #fb923c;
+  --color-type-other: var(--color-gray-400);
+  /* the brand blues lightened by --color-series-1's own step, oklch L +0.047 */
+  --color-brand-docker: #2c72fe;
+  --color-brand-kubernetes: #407bf5;
+  --chart-text: var(--color-gray-100);
+  --chart-ink: var(--color-gray-400);
+  --chart-grid: var(--color-gray-800);
+  --chart-surface: var(--color-gray-900);
+}
+
+html {
+  word-break: break-word;
+}
+
+/* Escape hides an open tooltip (components/App.tsx sets the attribute, and clears it on the next
+   pointer move or focus). Unlayered, so it wins over the group-hover utilities, which Tailwind
+   puts in @layer utilities. */
+:root[data-tip="off"] .tip {
+  visibility: hidden;
+  opacity: 0;
+}
+
+/* The first view Frappe serves (components/FirstView.tsx). Its left column stands in for the sidebar, at the
+   width this reader left it at: the page's own boot script reads that from localStorage before the first
+   pixel, so the greeting is drawn where the app is about to draw it and nothing moves at the handover. */
+.first-rail {
+  width: var(--rail-width);
+}
+:root[data-sidebar="open"] .first-rail {
+  width: var(--sidebar-width);
+  background-color: var(--color-gray-50);
+}
+:root[data-sidebar="open"].dark .first-rail {
+  background-color: var(--color-gray-950);
+}
+/* a chat, the documents view or a reader who is not signed in: the app opens on something else, so the
+   served landing is withheld rather than shown and taken away */
+:root[data-first-view="off"] #first-view {
+  display: none;
+}
+
+/* Open WebUI v0.11.3's scrollbar, measured: a 0.45rem rounded thumb on a clear track */
+::-webkit-scrollbar {
+  width: 0.45rem;
+  height: 0.45rem;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  border: 1px solid var(--color-white);
+  border-radius: 9999px;
+  background: rgb(215 215 215 / 0.6);
+}
+.dark ::-webkit-scrollbar-thumb {
+  border-color: var(--color-black);
+  background: rgb(67 67 67 / 0.6);
+}
+
+/* spacing measured from Open WebUI v0.11.3 answers: p 0/8px, h3 16px 8/4px, lists 8px, items 2px */
+.markdown-prose {
+  @apply prose prose-sm dark:prose-invert max-w-none text-[0.9375rem] leading-relaxed prose-pre:rounded-2xl
+    prose-headings:font-medium prose-headings:mt-2 prose-headings:mb-1 prose-h3:text-base prose-h3:leading-snug
+    prose-p:mt-0 prose-p:mb-2 prose-ul:my-2 prose-ol:my-2 prose-li:my-0.5;
+}
+
+/* typography's own first/last-child reset is keyed to .prose, which @apply does not carry */
+.markdown-prose > :first-child {
+  margin-top: 0;
+}
+.markdown-prose > :last-child {
+  margin-bottom: 0;
+}
+
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--color-gray-600) 0%,
+    var(--color-gray-800) 50%,
+    var(--color-gray-600) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 1.5s linear infinite;
+}
+
+.dark .shimmer {
+  background-image: linear-gradient(
+    90deg,
+    var(--color-gray-500) 0%,
+    var(--color-gray-100) 50%,
+    var(--color-gray-500) 100%
+  );
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer {
+    animation: none;
+    background: none;
+    color: var(--color-gray-600);
+  }
+
+  /* .dark .shimmer outranks the rule above, so its gradient outlives that `background: none` */
+  .dark .shimmer {
+    background-image: none;
+    color: var(--color-gray-400);
+  }
+}

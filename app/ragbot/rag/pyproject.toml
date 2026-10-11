@@ -1,0 +1,61 @@
+[project]
+name = "rag"
+description = "Knowledge base over Frappe Drive"
+authors = [{ name = "Sarathi Thirumalai Soundararajan" }]
+# the notice at the end of the repository's LICENSE grants "version 3 ... or any later version"
+license = "AGPL-3.0-or-later"
+requires-python = ">=3.14"
+# pymupdf is only here today because drive happens to require it. When drive drops it,
+# PDF ingest breaks one file at a time with nothing but an Error Log row to say so.
+# chardet comes from frappe, which reads mail with it and pins it ~=5.2.0; rag imports it, so it is named
+# here too, and at frappe's pin — a wider range resolves to a chardet the bench never installs.
+dependencies = ["chardet~=5.2.0", "pymupdf>=1.24", "requests>=2.31"]
+dynamic = ["version"]
+
+[build-system]
+requires = ["flit_core >=3.11,<4"]  # 3.11 is the oldest that accepts a PEP 639 licence expression; 3.10 refuses it
+build-backend = "flit_core.buildapi"
+
+# What bench reads to know which frappe this app needs, in validate_app_dependencies at install
+# and in get_required_frappe_version for the app cache. The -dev bounds are drive's form and admit
+# a development checkout: semantic_version, which bench compares with, keeps 16.0.0-dev out of
+# ">=16.0.0,<17.0.0" but inside this range, while frappe's develop, 17.0.0-dev, stays out.
+# Sibling apps are declared the other way, in hooks.py's required_apps, which bench reads separately.
+[tool.bench.frappe-dependencies]
+frappe = ">=16.0.0-dev,<17.0.0-dev"
+
+[tool.pyrefly]
+python-version = "3.14"
+# frappe, drive and frappe's click, redis and werkzeug live in the bench's environment; chardet, pymupdf
+# and requests are rag's own but unresolved too, as rag has no local environment (no lock) yet
+ignore-missing-imports = ["frappe", "frappe.*", "frappe_ai.*", "drive", "drive.*", "click", "redis", "werkzeug.*", "requests", "pymupdf", "chardet"]
+
+# Frappe's own settings, so `ruff check rag/` means the same thing here as upstream.
+[tool.ruff]
+line-length = 110
+indent-width = 1
+# 0.15 reads a tab-indented "word: text" comment as commented-out code (ERA001)
+required-version = ">=0.16"
+
+[tool.ruff.format]
+indent-style = "tab"
+
+[tool.ruff.lint]
+select = [
+ "F", "E", "W", "I", "UP", "B", "RET", "SIM", "C4",
+ "S110", "BLE001", "E722", "T20", "G", "ERA001", "TD003", "FIX002",
+]
+ignore = [
+ "E101",  # frappe indents with tabs
+ "W191",
+]
+
+[tool.vulture]
+# 60, the default, reports every frappe hook and doctype method the framework calls by name
+min_confidence = 80
+
+[tool.deptry.per_rule_ignores]
+# the bench provides these, so rag must not declare them: the [tool.pyrefly] list above again
+DEP001 = ["frappe", "frappe_ai", "drive", "redis", "werkzeug"]
+# click is nobody's direct dependency here; it arrives through whatever environment deptry reads
+DEP003 = ["click"]

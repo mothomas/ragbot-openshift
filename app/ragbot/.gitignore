@@ -1,0 +1,35 @@
+.DS_Store
+.vscode/
+.venv/
+node_modules/
+*.log
+
+# vendored for reading only, not part of this repo
+frappe-operator/
+graphify-out/
+
+.build/
+.env
+.env.*
+!.env.example
+__pycache__/
+.claude/
+.ruff_cache/
+rag/node_modules/
+rag/frontend/.next/
+rag/frontend/out/
+rag/frontend/next-env.d.ts
+*.tsbuildinfo
+rag/rag/public/ask/
+rag/rag/www/ask.html
+rag/.next/
+rag/rag/public/node_modules
+
+# working notes: specs, plans and validation records stay local
+docs/
+sbom/
+tests/system/node_modules/
+tests/system/test-results/
+tests/system/a11y-results/
+tests/system/.users.json
+tests/system/*-latest.json

@@ -1,0 +1,46 @@
+version: 2
+updates:
+  # the SHA pins in .github/workflows, which nothing else moves
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+
+  # mcp/Dockerfile's FROM lines are pinned by digest, so nothing else moves them either.
+  # compose.demo.yaml's images are pinned by digest too, but the docker-compose ecosystem reads
+  # only docker-compose.y(a)ml and compose.y(a)ml, so those two are moved by hand.
+  - package-ecosystem: docker
+    directory: /mcp
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: pip
+    directory: /rag
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: npm
+    directory: /rag
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      next:
+        patterns:
+          - next
+          - eslint-config-next
+
+  # the playwright and axe harness the system checks run
+  - package-ecosystem: npm
+    directory: /tests/system
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7

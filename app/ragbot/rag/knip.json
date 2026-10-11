@@ -1,0 +1,12 @@
+{
+	"entry": [
+		"frontend/app/**/{page,layout}.tsx",
+		"frontend/scripts/*.mjs",
+		"frontend/next.config.ts",
+		"frontend/postcss.config.mjs",
+		"frontend/lib/**/*.test.ts"
+	],
+	"project": ["frontend/**/*.{ts,tsx,mjs,css}", "!frontend/e2e/**", "!frontend/out/**", "!frontend/.next/**"],
+	"ignoreDependencies": ["@tailwindcss/postcss"],
+	"vitest": false
+}

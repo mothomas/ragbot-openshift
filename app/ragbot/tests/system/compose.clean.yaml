@@ -1,0 +1,34 @@
+# The clean-setup check's project only (COMPOSE_EXTRA): every volume is tmpfs, so each run starts empty and `make down`
+# leaves no data behind and removes nothing. Never used by the demo, whose volumes hold the owner's data.
+#
+# A tmpfs volume is always empty, where an ordinary named volume inherits the image's own directory, so sites-holder
+# copies the image's sites (apps.txt, apps.json and an empty common_site_config.json, which the configurator writes
+# into) and then stays up: a tmpfs volume's data lives only while a container mounts it. It mounts at /sites so the
+# image's own copy is not masked.
+services:
+  sites-holder:
+    image: ${CUSTOM_IMAGE:-frappe-demo}:${CUSTOM_TAG:-16}
+    entrypoint: ["bash", "-c"]
+    command: ["cp -an /home/frappe/frappe-bench/sites/. /sites/; exec sleep infinity"]
+    volumes:
+      - sites:/sites
+    healthcheck:
+      test: ["CMD", "test", "-f", "/sites/common_site_config.json"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  configurator:
+    depends_on:
+      sites-holder:
+        condition: service_healthy
+
+volumes:
+  sites:
+    driver: local
+    driver_opts: { type: tmpfs, device: tmpfs, o: "size=6g" }
+  db-data:
+    driver: local
+    driver_opts: { type: tmpfs, device: tmpfs, o: "size=6g" }
+  redis-queue-data:
+    driver: local
+    driver_opts: { type: tmpfs, device: tmpfs, o: "size=512m" }

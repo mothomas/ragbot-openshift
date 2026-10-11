@@ -1,0 +1,46 @@
+{
+  "body": {
+    "font-family": "-apple-system, BlinkMacSystemFont, Inter, Vazirmatn, ui-sans-serif, system-ui, \"Segoe UI\", Roboto, Ubuntu, Cantarell, \"Noto Sans\", sans-serif, \"Helvetica Neue\", Arial, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+    "font-size": "16px",
+    "line-height": "24px",
+    "color": "rgb(238, 238, 238)",
+    "background-color": "rgb(23, 23, 23)",
+    "border-radius": "0px",
+    "padding": "0px",
+    "box-shadow": "none",
+    "width": 1440
+  },
+  "prose": {
+    "font-family": "-apple-system, BlinkMacSystemFont, Inter, Vazirmatn, ui-sans-serif, system-ui, \"Segoe UI\", Roboto, Ubuntu, Cantarell, \"Noto Sans\", sans-serif, \"Helvetica Neue\", Arial, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+    "font-size": "15px",
+    "line-height": "24.375px",
+    "color": "oklch(0.872 0.01 258.338)",
+    "background-color": "rgba(0, 0, 0, 0)",
+    "border-radius": "0px",
+    "padding": "0px",
+    "box-shadow": "none",
+    "width": 860
+  },
+  "bubble": {
+    "font-family": "-apple-system, BlinkMacSystemFont, Inter, Vazirmatn, ui-sans-serif, system-ui, \"Segoe UI\", Roboto, Ubuntu, Cantarell, \"Noto Sans\", sans-serif, \"Helvetica Neue\", Arial, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+    "font-size": "16px",
+    "line-height": "24px",
+    "color": "oklch(0.94 0 0)",
+    "background-color": "oklch(0.27 0 0)",
+    "border-radius": "24px",
+    "padding": "6px 16px",
+    "box-shadow": "none",
+    "width": 486
+  },
+  "composer": {
+    "font-family": "-apple-system, BlinkMacSystemFont, Inter, Vazirmatn, ui-sans-serif, system-ui, \"Segoe UI\", Roboto, Ubuntu, Cantarell, \"Noto Sans\", sans-serif, \"Helvetica Neue\", Arial, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+    "font-size": "16px",
+    "line-height": "24px",
+    "color": "oklch(0.94 0 0)",
+    "background-color": "oklab(0.69 0 0 / 0.05)",
+    "border-radius": "24px",
+    "padding": "0px 2px",
+    "box-shadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0.1) 0px 10px 15px -3px, rgba(0, 0, 0, 0.1) 0px 4px 6px -4px",
+    "width": 912
+  }
+}

@@ -1,0 +1,78 @@
+{{- if .Values.skupper.enabled }}
+{{- $role := include "ragbot.role" . }}
+{{- $api := .Values.skupper.apiVersion }}
+{{- $side := index .Values $role }}
+# One Skupper site per cluster, in this namespace only. The RHSI controller
+# installed cluster-wide picks these up; nothing here is cluster-scoped.
+apiVersion: {{ $api }}
+kind: Site
+metadata:
+  name: {{ $side.skupper.siteName }}
+  labels:
+    {{- include "ragbot.labels" . | nindent 4 }}
+  annotations:
+    {{- include "ragbot.wave" "-1" | nindent 4 }}
+spec:
+  {{- if eq $role "rosa" }}
+  # ROSA accepts the link (exposed through a Route); on-prem dials out, so
+  # on-prem needs no inbound firewall opening.
+  linkAccess: default
+  {{- end }}
+---
+{{- if eq $role "rosa" }}
+# Expose the GPU Ollama pods on the application network.
+apiVersion: {{ $api }}
+kind: Connector
+metadata:
+  name: {{ .Values.llm.routingKey }}
+  labels:
+    {{- include "ragbot.labels" . | nindent 4 }}
+spec:
+  routingKey: {{ .Values.llm.routingKey }}
+  selector: app.kubernetes.io/name=ollama-llm
+  port: {{ .Values.llm.port }}
+{{- if $side.skupper.accessGrant.enabled }}
+---
+# A one-time grant. Its status carries url, code and ca; feed them to the
+# on-prem AccessToken (README: "Link the sites").
+apiVersion: {{ $api }}
+kind: AccessGrant
+metadata:
+  name: ragbot-onprem-link
+  labels:
+    {{- include "ragbot.labels" . | nindent 4 }}
+spec:
+  redemptionsAllowed: {{ $side.skupper.accessGrant.redemptionsAllowed }}
+  expirationWindow: {{ $side.skupper.accessGrant.expirationWindow }}
+{{- end }}
+{{- else }}
+# Materialise the ROSA model as a local Service: http://{{ .Values.llm.host }}:{{ .Values.llm.port }}
+apiVersion: {{ $api }}
+kind: Listener
+metadata:
+  name: {{ .Values.llm.host }}
+  labels:
+    {{- include "ragbot.labels" . | nindent 4 }}
+spec:
+  routingKey: {{ .Values.llm.routingKey }}
+  host: {{ .Values.llm.host }}
+  port: {{ .Values.llm.port }}
+{{- with $side.skupper.accessToken }}
+{{- if and .url .code .ca }}
+---
+# Redeems the ROSA grant and creates the Link. Values must come from a secret
+# manager at render time, never from Git.
+apiVersion: {{ $api }}
+kind: AccessToken
+metadata:
+  name: ragbot-rosa-link
+  labels:
+    {{- include "ragbot.labels" $ | nindent 4 }}
+spec:
+  url: {{ .url | quote }}
+  code: {{ .code | quote }}
+  ca: {{ .ca | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

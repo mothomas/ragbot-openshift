@@ -1,0 +1,378 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # A pull request usually touches one part of the tree, and the bench job costs 45 minutes. This
+  # narrows only the three jobs whose subject is a directory; every-file jobs (the hooks, and the
+  # secret and vulnerability scans) always run, and so does everything on a push to main, where
+  # `files` is the whole tree. Job-level `if` rather than `on.<event>.paths`: a workflow filtered
+  # by paths never reports, which blocks a required check, while a skipped job reports as passing.
+  # https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/collaborating-on-repositories-with-code-quality-features/troubleshooting-required-status-checks#handling-skipped-but-required-checks
+  # That is also why the conditions read `!= 'false'` and carry `!cancelled()`: a plain
+  # `== 'true'` is implicitly ANDed with success(), so a filter job that failed would skip all
+  # three — and a skipped job passes. An unanswered filter has to run the job, not wave it through.
+  changes:
+    name: What this event touched
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      rag: ${{ steps.filter.outputs.rag }}
+      mcp: ${{ steps.filter.outputs.mcp }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Compare against the base branch
+        id: filter
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ -z "$BASE" ]; then files=$(git ls-files); else files=$(git diff --name-only "$BASE"...HEAD); fi
+          echo "$files"
+          match() { printf '%s\n' "$files" | grep -qE "$1" && echo true || echo false; }
+          {
+            echo "rag=$(match '^(rag/|apps\.json$|\.github/workflows/)')"
+            echo "mcp=$(match '^(mcp/|Makefile$|\.github/workflows/)')"
+          } >> "$GITHUB_OUTPUT"
+
+  checks:
+    name: Lint, format and boundaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.14"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          enable-cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "24"
+
+      - name: Cache the pre-commit environments
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      # ruff, ruff format, pyrefly, vulture, xenon, deptry, bandit, import-linter, markdownlint,
+      # hadolint, actionlint and zizmor, from the same .pre-commit-config.yaml a contributor
+      # installs locally
+      - name: Run every pre-commit hook
+        run: uvx --quiet pre-commit run --all-files --show-diff-on-failure --color=always
+
+  metis:
+    name: Metis
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.rag != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "24"
+          cache: yarn
+          cache-dependency-path: rag/yarn.lock
+
+      - name: Install
+        run: yarn --cwd rag install --frozen-lockfile
+
+      - name: Lint (eslint, with jsx-a11y)
+        run: yarn --cwd rag lint
+
+      - name: Formatting (prettier)
+        run: yarn --cwd rag format:check
+
+      - name: Type check (tsc)
+        run: yarn --cwd rag typecheck
+
+      - name: Unit tests (vitest)
+        run: yarn --cwd rag test
+
+      - name: Unused files, exports and dependencies (knip)
+        working-directory: rag
+        env:
+          KNIP_VERSION: "5.88.1"
+        run: npx --yes "knip@${KNIP_VERSION}" --no-progress
+
+      - name: Duplication budget (jscpd, 3%)
+        working-directory: rag
+        env:
+          JSCPD_VERSION: "4.3.0"
+        run: |
+          npx --yes "jscpd@${JSCPD_VERSION}" --silent --threshold 3 \
+            --ignore '**/node_modules/**,**/.next/**,**/out/**,**/e2e/**' \
+            frontend/components frontend/lib
+
+      # the only step that type-checks the static export, and the one `make ask` runs
+      - name: Build the /ask export
+        run: yarn --cwd rag build
+
+  server:
+    name: rag on a bench
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.rag != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+
+    services:
+      mariadb:
+        # the digest compose.demo.yaml pins, so CI and the demo test the same database
+        image: mariadb:12.3.3@sha256:805c8e104bd563d5bfa24fadd3f31cd419ea859cb5277f32b5dbf2db714f9ed1
+        env:
+          MARIADB_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mariadb-admin ping"
+          --health-interval=5s
+          --health-timeout=2s
+          --health-retries=10
+          --tmpfs=/var/lib/mysql
+      redis-cache:
+        image: redis:8.6-alpine@sha256:bb2e2e3ac0c7295b6f3b1b7ee5438f7320c74483cba1cb195f3fd43dad38de67
+        ports:
+          - 13000:6379
+      redis-queue:
+        image: redis:8.6-alpine@sha256:bb2e2e3ac0c7295b6f3b1b7ee5438f7320c74483cba1cb195f3fd43dad38de67
+        ports:
+          - 11000:6379
+      # the suite embeds for real: five attachment and passage tests call /api/embed through
+      # rag.ingest. The digest is compose.demo.yaml's, so CI embeds with the demo's Ollama.
+      ollama:
+        image: ollama/ollama:0.34.1@sha256:0c0a83210471fb50226bcdc2d6611d20ab13ae87e024cc304c94a6a5765c5e65
+        ports:
+          - 11434:11434
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          path: ragbot
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "24"
+          cache: yarn
+          cache-dependency-path: ragbot/rag/yarn.lock
+
+      - name: Install the MariaDB client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes mariadb-client
+
+      # Two names the suite expects to resolve because on the demo they are containers on one
+      # network. rag.ingest defaults to host.docker.internal (test_site_config_model asserts that
+      # default and that the site does not override it), and test_status_probe and
+      # test_status_agent_sid hardcode http://test-agent:8484 in their own setUp, where
+      # _validate_agent_url resolves the host and throws AgentUnreachable when it cannot. The
+      # service containers publish on the runner, so both point at it.
+      - name: Resolve the demo's container names to this runner
+        run: echo "127.0.0.1 host.docker.internal test-agent" | sudo tee -a /etc/hosts
+
+      - name: Initialise a bench
+        run: |
+          pip install frappe-bench
+          # without a branch bench clones frappe develop, which reports itself as 17.0.0-dev and does
+          # not satisfy the ">=16.0.0,<17.0.0" rag declares; this is the tag the Makefile pins too
+          bench init --frappe-branch v16.34.0 --skip-redis-config-generation --skip-assets \
+            --python "$(which python)" ~/frappe-bench
+
+      # rag/rag/hooks.py names both in required_apps, and frappe's install_app installs a
+      # required app recursively or raises, so both have to be on the bench first. The refs
+      # come from apps.json, which is also what `make image` bakes into the demo's image.
+      - name: Install drive, frappe_ai and rag
+        working-directory: /home/runner/frappe-bench
+        env:
+          CI: "1"
+          # This job runs rag's Python suite; no step in it serves a page, so no app's frontend is built.
+          # Both halves are needed and neither is enough alone (bench/app.py:960-969): bench runs
+          # `yarn install` for every app with a package.json whatever --skip-assets says, which is where
+          # Drive reaches canvas -- an optional dependency of pdfjs-dist whose prebuilt binary 404s and
+          # whose source build wants pixman and cairo headers this runner has not got. Skipping optional
+          # dependencies drops canvas, but it also drops the platform binding vite needs
+          # (@rolldown/binding-linux-x64-gnu is itself an optionalDependency), so the asset build must go
+          # too -- and --skip-assets is what stops it.
+          YARN_IGNORE_OPTIONAL: "true"
+        run: |
+          jq -r '.[] | select(.url | test("/(drive|frappe_ai)$")) | "\(.url) \(.branch)"' \
+            "$GITHUB_WORKSPACE/ragbot/apps.json" \
+            | while read -r url branch; do bench get-app --skip-assets --branch "$branch" "$url"; done
+          # rag is not a repository root -- it lives at ragbot/rag -- so bench cannot take it as a
+          # local app: App() finds no .git there, falls through to its remote-name branch and dies
+          # building a URL with no org (bench/app.py:158-161). Until ADR-038 move 3 gives rag a
+          # repository of its own, make it one here. The directory must be named rag: bench takes the
+          # app name from the working tree's basename. K04.
+          mkdir -p /tmp/rag-app/rag
+          git -C "$GITHUB_WORKSPACE/ragbot" archive HEAD:rag | tar -x -C /tmp/rag-app/rag
+          git -C /tmp/rag-app/rag init -q
+          git -C /tmp/rag-app/rag add -A
+          git -C /tmp/rag-app/rag -c user.email=ci@local -c user.name=ci commit -qm "rag at $GITHUB_SHA"
+          bench get-app --skip-assets /tmp/rag-app/rag
+          bench setup requirements --dev
+          bench new-site --db-root-password root --admin-password admin test_site
+          bench --site test_site install-app rag
+          # The status panel's agent tests mock requests.get, but status.py:94 reads the address off
+          # site config before it probes: with none, _agent_config never fires the mocked call and
+          # _ip() (status.py:272) has no hostname to report. This is the address make test-site sets,
+          # so CI and the demo name the same agent; the hosts entry below is what makes it resolve.
+          bench --site test_site set-config frappe_ai_agent_url http://test-agent:8484
+          bench --site test_site set-config -p frappe_ai_agent_url_unsafe_ok 1
+
+      - name: Pull the embedding model
+        run: |
+          for _ in $(seq 60); do
+            curl -sf -m 2 http://localhost:11434/api/version >/dev/null && break
+            sleep 2
+          done
+          curl -sf -m 600 http://localhost:11434/api/pull -d '{"model":"nomic-embed-text"}' >/dev/null
+
+      - name: Run the rag suite
+        working-directory: /home/runner/frappe-bench
+        env:
+          CI: "1"
+        run: bench --site test_site run-tests --app rag
+
+  security:
+    name: Security
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.14"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          enable-cache: true
+
+      - name: Semgrep, with frappe's own rules
+        env:
+          # frappe/semgrep-rules has no releases, so the pin is a commit and is bumped by hand
+          SEMGREP_RULES_REF: b101a16e69df049b3fed1478bcc16223e957cca2
+        run: |
+          git clone --quiet https://github.com/frappe/semgrep-rules.git /tmp/semgrep-rules
+          git -C /tmp/semgrep-rules checkout --quiet "$SEMGREP_RULES_REF"
+          uvx --quiet semgrep scan --metrics=off --error --quiet \
+            --config /tmp/semgrep-rules/rules --config p/python rag/rag
+
+      - name: Semgrep, Metis's TypeScript
+        run: |
+          uvx --quiet semgrep scan --metrics=off --error --quiet \
+            --config p/typescript --config p/react \
+            rag/frontend/app rag/frontend/components rag/frontend/lib
+
+      - name: Known vulnerabilities in the lockfiles (osv-scanner)
+        env:
+          OSV_VERSION: "2.6.0"
+        run: |
+          base="https://github.com/google/osv-scanner/releases/download/v${OSV_VERSION}"
+          curl -sSfL -o osv-scanner "${base}/osv-scanner_linux_amd64"
+          curl -sSfL -o osv-scanner_SHA256SUMS "${base}/osv-scanner_SHA256SUMS"
+          grep ' osv-scanner_linux_amd64$' osv-scanner_SHA256SUMS \
+            | sed 's/osv-scanner_linux_amd64/osv-scanner/' | sha256sum --check --strict -
+          chmod +x osv-scanner
+          ./osv-scanner scan source --recursive .
+
+      - name: Secrets in the working tree (gitleaks)
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+        run: |
+          curl -sSfL -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf gitleaks.tar.gz gitleaks
+          ./gitleaks dir --no-banner --redact --exit-code 1 .
+
+  image:
+    name: MCP image
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.mcp != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Build the image the stack runs
+        run: make mcp-image MCP_IMAGE=frappe-mcp-server:ci
+
+      - name: SBOM for that image
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          image: frappe-mcp-server:ci
+          format: cyclonedx-json
+          output-file: frappe-mcp-server.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Keep the SBOM
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: sbom-frappe-mcp-server
+          path: frappe-mcp-server.cdx.json
+          retention-days: 7

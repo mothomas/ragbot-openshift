@@ -1,0 +1,33 @@
+role: rosa
+
+rosa:
+  llm:
+    replicas: 1
+    # Parallel requests share VRAM: each slot adds a full KV cache of numCtx.
+    # 1 on a T4; 2 is reasonable on an A10 with a 16K context.
+    numParallel: 1
+    gpus: 1
+    # NFD + GPU Operator label GPU nodes with this.
+    nodeSelector:
+      nvidia.com/gpu.present: "true"
+    # Match the taint on your GPU MachinePool, if it has one.
+    tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+    # The image (~25 GB with gemma4:26b) lands on the node's
+    # root disk; keep the GPU MachinePool's root volume >= 100 GiB.
+    # Weights live in VRAM; host RAM only stages them. Sized to fit the
+    # 16 GiB of a g5.xlarge / g4dn.xlarge; raise on a 2xlarge.
+    resources:
+      requests: {cpu: "2", memory: 8Gi}
+      limits: {cpu: "4", memory: 14Gi}
+
+  skupper:
+    siteName: ragbot-rosa
+    # Issue a one-time grant the on-prem site redeems. The grant's status holds
+    # the url/code/ca the on-prem AccessToken needs (see README runbook).
+    accessGrant:
+      enabled: true
+      redemptionsAllowed: 1
+      expirationWindow: 1h
