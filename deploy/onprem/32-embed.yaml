@@ -1,0 +1,41 @@
+# Embeddings on CPU: Ollama with nomic-embed-text baked into the image.
+# Every chunk of every document is embedded here, so document text stays on-prem.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama-embed
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: ollama-embed}
+  template:
+    metadata:
+      labels: {app: ollama-embed}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: ollama
+          image: quay.io/CHANGE-ME/ragbot-embed:nomic-embed-text   # images/ollama-model, MODEL=nomic-embed-text
+          ports:
+            - {name: http, containerPort: 11434}
+          startupProbe:           # fails if the image doesn't hold the model
+            exec: {command: [ollama, show, nomic-embed-text]}
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: {path: /api/version, port: http}
+          resources:
+            requests: {cpu: "1", memory: 2Gi}
+            limits: {cpu: "4", memory: 4Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama-embed
+spec:
+  selector: {app: ollama-embed}
+  ports:
+    - {name: http, port: 11434, targetPort: http}

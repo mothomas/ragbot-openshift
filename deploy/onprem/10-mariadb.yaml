@@ -1,0 +1,37 @@
+# MariaDB for Frappe (MariaDB Operator). 12.x is needed: rag stores document
+# embeddings in VECTOR(768) columns, which arrived in 11.7.
+apiVersion: k8s.mariadb.com/v1alpha1
+kind: MariaDB
+metadata:
+  name: ragbot-mariadb
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  image: docker.io/library/mariadb:12.3.3
+  rootPasswordSecretKeyRef:
+    name: ragbot-mariadb-root
+    key: password
+    generate: true          # the operator creates the Secret with a random password
+  port: 3306
+  replicas: 1
+  storage:
+    size: 50Gi
+    # storageClassName: CHANGE-ME   # omit to use the cluster default (RWO is fine)
+  resources:
+    requests: {cpu: 500m, memory: 2Gi}
+    limits: {cpu: "2", memory: 4Gi}
+  myCnf: |
+    [mariadb]
+    bind-address=*
+    default_storage_engine=InnoDB
+    innodb_file_per_table=1
+    max_allowed_packet=256M
+    character-set-client-handshake=FALSE
+    character-set-server=utf8mb4
+    collation-server=utf8mb4_unicode_ci
+    # 11.8+ turns this on; Frappe's login savepoint then fails a second
+    # concurrent login of the same user (ragbot ADR-016)
+    innodb_snapshot_isolation=OFF
+
+    [client]
+    default-character-set=utf8mb4

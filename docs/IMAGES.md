@@ -10,11 +10,14 @@ make images REGISTRY=quay.io/<you>
 make push REGISTRY=quay.io/<you>
 ```
 
+Then put your registry into the `image:` lines under `deploy/`. They're the only lines that say
+`quay.io/CHANGE-ME`:
+
 ```bash
-make values REGISTRY=quay.io/<you>
+grep -rn 'quay.io/CHANGE-ME' deploy/
 ```
 
-`make values` prints the `images:` block for `charts/ragbot/values.yaml`. Use `ENGINE=docker` for
+Use `ENGINE=docker` for
 Docker instead of Podman. `PLATFORM` defaults to `linux/amd64` (OpenShift nodes), which is what
 you want even when building on Apple Silicon.
 
@@ -99,7 +102,7 @@ Once the model is in VRAM, inference latency is identical either way. What the u
 
 To keep the first pull fast:
 - **Push to a registry in the same AWS region as ROSA.** ECR, or Quay with a regional mirror.
-- **Use `imagePullPolicy: IfNotPresent` with immutable tags.** These are the chart defaults.
+- **Use immutable tags.** With a non-`latest` tag, Kubernetes defaults to `imagePullPolicy: IfNotPresent`, so a node reuses its cached copy.
 - **Keep the GPU MachinePool's minimum at 1.** Scaling to zero discards the cached image, and the next node pulls it again.
 - **Give the GPU MachinePool a root volume of at least 100 GiB.**
 

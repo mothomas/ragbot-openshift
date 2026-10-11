@@ -1,0 +1,20 @@
+# Skupper (Red Hat Service Interconnect 2.x), on-prem side.
+# The Listener makes the GPU model on ROSA appear here as http://ollama-llm:11434.
+# On-prem dials out to ROSA, so no inbound firewall opening is needed here.
+apiVersion: skupper.io/v2alpha1
+kind: Site
+metadata:
+  name: ragbot-onprem
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec: {}
+---
+apiVersion: skupper.io/v2alpha1
+kind: Listener
+metadata:
+  name: ollama-llm
+spec:
+  routingKey: ragbot-llm      # matches the Connector on ROSA
+  host: ollama-llm
+  port: 11434
+# The link itself (AccessToken) is a credential: create it once by hand, see README.

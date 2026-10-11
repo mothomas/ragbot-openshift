@@ -1,35 +1,7 @@
-# One ApplicationSet, one chart, two clusters. Each ACM Placement feeds a
-# generator that carries the role; the role picks values-<role>.yaml, which
-# decides which pieces render on that cluster.
-apiVersion: argoproj.io/v1alpha1
-kind: AppProject
-metadata:
-  name: ragbot
-  namespace: openshift-gitops
-spec:
-  description: ragbot split deployment (on-prem data/app tier, ROSA GPU inference)
-  sourceRepos:
-    - https://github.com/mothomas/ragbot-openshift.git
-  destinations:
-    - {server: '*', namespace: ragbot}
-  # Namespace-scoped only: the chart creates nothing cluster-wide. The
-  # operators (MariaDB, frappe-operator, RHSI, GPU, NFD) are prerequisites.
-  clusterResourceWhitelist:
-    - {group: '', kind: Namespace}
-  namespaceResourceWhitelist:
-    - {group: '', kind: '*'}
-    - {group: apps, kind: Deployment}
-    - {group: batch, kind: Job}
-    - {group: k8s.mariadb.com, kind: MariaDB}
-    - {group: vyogo.tech, kind: FrappeBench}
-    - {group: vyogo.tech, kind: FrappeSite}
-    - {group: vyogo.tech, kind: SiteConfig}
-    - {group: skupper.io, kind: Site}
-    - {group: skupper.io, kind: Listener}
-    - {group: skupper.io, kind: Connector}
-    - {group: skupper.io, kind: AccessGrant}
-    - {group: skupper.io, kind: AccessToken}
----
+# One ApplicationSet, two clusters, plain YAML (no Helm, no Kustomize).
+#   ACM Placement ragbot-onprem -> Application ragbot-onprem -> deploy/onprem/
+#   ACM Placement ragbot-rosa   -> Application ragbot-rosa   -> deploy/rosa/
+# Apply on the ACM hub, after argocd/placements.yaml.
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -46,7 +18,7 @@ spec:
             cluster.open-cluster-management.io/placement: ragbot-onprem
         requeueAfterSeconds: 180
         values:
-          role: onprem
+          site: onprem
     - clusterDecisionResource:
         configMapRef: acm-placement
         labelSelector:
@@ -54,26 +26,16 @@ spec:
             cluster.open-cluster-management.io/placement: ragbot-rosa
         requeueAfterSeconds: 180
         values:
-          role: rosa
+          site: rosa
   template:
     metadata:
-      name: 'ragbot-{{ .values.role }}'
-      labels:
-        ragbot.io/role: '{{ .values.role }}'
+      name: 'ragbot-{{ .values.site }}'
     spec:
-      project: ragbot
+      project: default
       source:
         repoURL: https://github.com/mothomas/ragbot-openshift.git
         targetRevision: main
-        path: charts/ragbot
-        helm:
-          releaseName: ragbot
-          valueFiles:
-            - values.yaml
-            - 'values-{{ .values.role }}.yaml'
-            # Optional per-cluster overrides, e.g. values-cluster-onprem-ocp1.yaml
-            - 'values-cluster-{{ .name }}.yaml'
-          ignoreMissingValueFiles: true
+        path: 'deploy/{{ .values.site }}'
       destination:
         name: '{{ .name }}'
         namespace: ragbot
@@ -81,8 +43,8 @@ spec:
         automated:
           prune: true
           selfHeal: true
-        # CRs are applied before their operators have reconciled anything; retry
-        # rather than fail the first sync.
+        # Custom resources are applied before their operators finish; retry
+        # instead of failing the first sync.
         retry:
           limit: 10
           backoff: {duration: 30s, factor: 2, maxDuration: 5m}
@@ -90,6 +52,3 @@ spec:
           - CreateNamespace=true
           - ServerSideApply=true
           - SkipDryRunOnMissingResource=true
-        managedNamespaceMetadata:
-          labels:
-            ragbot.io/role: '{{ .values.role }}'

@@ -1,0 +1,68 @@
+# MCP server: the agent's tools, including search_knowledge_base. Every tool
+# call runs as the user who asked, so answers only read what Drive allows.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ragbot-mcp
+data:
+  config.yaml: |
+    server:
+      port: 8080
+    erpnext:
+      timeout: "30s"
+      retry:
+        max_attempts: 5
+        initial_delay: "500ms"
+    auth:
+      enabled: true
+      require_auth: true
+      oauth2:
+        issuer_url: "http://ragbot-nginx:8080"
+        token_info_url: "http://ragbot-nginx:8080/api/method/frappe.integrations.oauth2.openid_profile"
+        validate_remote: true
+    tools:
+      knowledge_base: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ragbot-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: ragbot-mcp}
+  template:
+    metadata:
+      labels: {app: ragbot-mcp}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: mcp
+          image: quay.io/CHANGE-ME/frappe-mcp-server:a01ce12c   # images/mcp/Dockerfile
+          env:
+            # ragbot-nginx is the Service frappe-operator creates for the bench
+            - {name: FRAPPE_BASE_URL, value: "http://ragbot-nginx:8080"}
+          ports:
+            - {name: http, containerPort: 8080}
+          volumeMounts:
+            - {name: config, mountPath: /app/config.yaml, subPath: config.yaml, readOnly: true}
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+      volumes:
+        - name: config
+          configMap: {name: ragbot-mcp}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ragbot-mcp
+spec:
+  selector: {app: ragbot-mcp}
+  ports:
+    - {name: http, port: 8080, targetPort: http}

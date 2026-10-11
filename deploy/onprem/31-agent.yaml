@@ -1,0 +1,48 @@
+# AI agent: runs the tool loop on-prem, next to Frappe. Only its model calls
+# leave the cluster, to ollama-llm, which Skupper brings over from ROSA.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ragbot-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: ragbot-agent}
+  template:
+    metadata:
+      labels: {app: ragbot-agent}
+    spec:
+      # Service links would inject AI_AGENT_*-looking variables; keep the env exact.
+      enableServiceLinks: false
+      containers:
+        - name: agent
+          image: quay.io/CHANGE-ME/frappe-ai-agent:7f1ef10c   # images/agent/Dockerfile
+          env:
+            - {name: AI_AGENT_MCP_SERVER_URL, value: "http://ragbot-mcp:8080/mcp"}
+            - {name: AI_AGENT_FRAPPE_URL, value: "http://ragbot-nginx:8080"}
+            # Every address users open the site on.  CHANGE-ME
+            - {name: AI_AGENT_CORS_ORIGINS, value: '["https://ragbot.apps.onprem.example.com","http://ragbot.onprem.example.com:8080"]'}
+            - {name: AI_AGENT_LLM_PROVIDER, value: ollama}
+            - {name: AI_AGENT_LLM_BASE_URL, value: "http://ollama-llm:11434"}   # Skupper Listener (50-skupper.yaml)
+            - {name: AI_AGENT_LLM_MODEL, value: "gemma4:26b"}                   # must match the ROSA image
+            - {name: AI_AGENT_LLM_NUM_CTX, value: "16384"}                      # must match OLLAMA_CONTEXT_LENGTH on ROSA
+            - {name: AI_AGENT_LLM_REQUEST_TIMEOUT_S, value: "75"}               # under the agent's 90 s turn limit
+          ports:
+            - {name: http, containerPort: 8484}
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {cpu: "1", memory: 1Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ragbot-agent
+spec:
+  selector: {app: ragbot-agent}
+  ports:
+    - {name: http, port: 8484, targetPort: http}

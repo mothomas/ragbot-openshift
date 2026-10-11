@@ -1,0 +1,24 @@
+# MetalLB address in front of the operator's nginx pods (plain HTTP).
+# To use 6443 instead of 8080, change `port` below.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ragbot-frontend-lb
+  annotations:
+    metallb.universe.tf/loadBalancerIPs: 10.0.0.241        # CHANGE-ME: pin an IP from your pool (not the API VIP)
+    # metallb.universe.tf/address-pool: CHANGE-ME          # optional: a specific IPAddressPool
+spec:
+  type: LoadBalancer
+  selector:                 # the labels frappe-operator puts on its nginx pods
+    app: frappe
+    bench: ragbot
+    component: nginx
+  ports:
+    - name: http
+      port: 8080            # or 6443
+      targetPort: 8080
+    # Frappe's realtime service checks a socket by fetching its Origin back
+    # without the port, i.e. on :80. Remove this port if you don't need it.
+    - name: realtime-auth
+      port: 80
+      targetPort: 8080

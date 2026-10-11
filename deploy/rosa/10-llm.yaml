@@ -1,0 +1,55 @@
+# The chat model on a GPU: Ollama with the model baked into the image.
+# No PVC, no download at start-up, no Route: Skupper (20-skupper.yaml) is the
+# only way in, so the unauthenticated Ollama API is never exposed.
+#
+# GPU sizing:  A10/A10G (24 GB) -> gemma4:26b    T4 (16 GB) -> qwen3.5:9b
+# The model must match AI_AGENT_LLM_MODEL in deploy/onprem/31-agent.yaml.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama-llm
+spec:
+  replicas: 1
+  strategy: {type: Recreate}   # one GPU: the old pod must free it first
+  selector:
+    matchLabels: {app: ollama-llm}
+  template:
+    metadata:
+      labels: {app: ollama-llm}
+    spec:
+      enableServiceLinks: false
+      nodeSelector:
+        nvidia.com/gpu.present: "true"          # set by NFD + GPU Operator
+      tolerations:                              # CHANGE-ME to match your GPU MachinePool taint
+        - {key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}
+      containers:
+        - name: ollama
+          image: quay.io/CHANGE-ME/ragbot-llm:gemma4-26b   # images/ollama-model, MODEL=gemma4:26b
+          env:
+            - {name: OLLAMA_CONTEXT_LENGTH, value: "16384"}   # = AI_AGENT_LLM_NUM_CTX on-prem
+            - {name: OLLAMA_NUM_PARALLEL, value: "1"}         # each slot adds a full KV cache
+          ports:
+            - {name: http, containerPort: 11434}
+          startupProbe:           # fails if the image doesn't hold the model
+            exec: {command: [ollama, show, "gemma4:26b"]}
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: {path: /api/version, port: http}
+          # Load the model into VRAM before the pod reports Ready, so the
+          # first question doesn't wait for it.
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - sh
+                  - -c
+                  - >-
+                    i=0; until ollama list >/dev/null 2>&1; do i=$((i+1)); [ $i -gt 120 ] && exit 0; sleep 1; done;
+                    ollama run "gemma4:26b" "Reply with OK." >/dev/null 2>&1 || true
+          resources:
+            requests: {cpu: "2", memory: 8Gi, nvidia.com/gpu: 1}
+            limits: {cpu: "4", memory: 14Gi, nvidia.com/gpu: 1}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}

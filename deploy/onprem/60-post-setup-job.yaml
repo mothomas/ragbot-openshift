@@ -1,0 +1,59 @@
+# Runs after every Argo CD sync, once the operator has created the site.
+#  - Frappe picks the site from the Host header, so every name the site is
+#    reached by (the in-cluster Service, the MetalLB name and IP) gets an alias.
+#  - Drive needs flat storage (ragbot's own setup does the same).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ragbot-post-setup
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 3300
+  template:
+    spec:
+      restartPolicy: OnFailure
+      enableServiceLinks: false
+      containers:
+        - name: post-setup
+          image: quay.io/CHANGE-ME/ragbot-bench:16     # same image as the bench
+          env:
+            - {name: SITE, value: ragbot.apps.onprem.example.com}                 # CHANGE-ME (siteName)
+            - {name: ALIASES, value: "ragbot-nginx ragbot.onprem.example.com 10.0.0.241"}  # CHANGE-ME (LB name + IP)
+            - {name: USER, value: frappe}
+            - {name: PYTHONPATH, value: "/tmp/pip:/home/frappe/frappe-bench/sites/apps"}
+          command: [bash, -ec]
+          args:
+            - |
+              cd /home/frappe/frappe-bench
+              [ -f sites/apps.txt ] && ln -sf sites/apps.txt apps.txt 2>/dev/null || true
+
+              echo "waiting for $SITE with rag installed"
+              for i in $(seq 1 135); do
+                [ -f "sites/$SITE/site_config.json" ] && bench --site "$SITE" list-apps 2>/dev/null | grep -qw rag && break
+                sleep 20
+              done
+              bench --site "$SITE" list-apps | grep -qw rag || { echo "site not ready" >&2; exit 1; }
+
+              for name in $ALIASES; do
+                [ "$name" = "$SITE" ] && continue
+                [ -d "sites/$name" ] && [ ! -L "sites/$name" ] && continue
+                ln -sfn "$SITE" "sites/$name" && echo "aliased $name -> $SITE"
+              done
+
+              bench --site "$SITE" execute frappe.db.set_single_value --args '["Drive Disk Settings", "flat", 1]'
+              bench --site "$SITE" execute rag.ingest.health || true
+          volumeMounts:   # the bench's sites volume, mounted the way the operator mounts it
+            - {name: sites, mountPath: /home/frappe/frappe-bench/sites, subPath: frappe-sites}
+            - {name: sites, mountPath: /home/frappe/frappe-bench/sites/assets, subPath: frappe-sites/assets}
+          resources:
+            requests: {cpu: 100m, memory: 512Mi}
+            limits: {cpu: "1", memory: 1Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+      volumes:
+        - name: sites
+          persistentVolumeClaim: {claimName: ragbot-sites}   # created by frappe-operator

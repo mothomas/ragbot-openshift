@@ -1,0 +1,29 @@
+# Skupper (Red Hat Service Interconnect 2.x), ROSA side.
+# The Connector puts the GPU Ollama pods on the application network as
+# "ragbot-llm"; the on-prem Listener turns that into http://ollama-llm:11434.
+apiVersion: skupper.io/v2alpha1
+kind: Site
+metadata:
+  name: ragbot-rosa
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  linkAccess: default    # ROSA accepts the link; on-prem dials out
+---
+apiVersion: skupper.io/v2alpha1
+kind: Connector
+metadata:
+  name: ragbot-llm
+spec:
+  routingKey: ragbot-llm
+  selector: app=ollama-llm
+  port: 11434
+---
+# One-time grant the on-prem site redeems to create the link (README: "Link the sites").
+apiVersion: skupper.io/v2alpha1
+kind: AccessGrant
+metadata:
+  name: ragbot-onprem-link
+spec:
+  redemptionsAllowed: 1
+  expirationWindow: 1h

@@ -6,7 +6,7 @@ ENGINE   ?= podman
 # OpenShift nodes are amd64; set explicitly so a Mac builds the right thing
 PLATFORM ?= linux/amd64
 
-# ---- Models baked into images (must match charts/ragbot/values.yaml llm.model) ---
+# ---- Models baked into images (must match deploy/rosa/10-llm.yaml and deploy/onprem/31-agent.yaml) ---
 LLM_MODEL   ?= gemma4:26b
 EMBED_MODEL ?= nomic-embed-text
 tagof = $(subst :,-,$(subst /,-,$(1)))
@@ -46,26 +46,4 @@ image-llm: ## Ollama + LLM_MODEL (ROSA GPU)
 image-embed: ## Ollama + EMBED_MODEL (on-prem CPU)
 	$(BUILD) --build-arg MODEL=$(EMBED_MODEL) -t $(EMBED) images/ollama-model
 
-values: ## Print the image values to paste into charts/ragbot/values.yaml
-	@echo "images:"
-	@echo "  bench: {repository: $(REGISTRY)/ragbot-bench, tag: \"16\"}"
-	@echo "  agent: {repository: $(REGISTRY)/frappe-ai-agent, tag: $(lastword $(subst :, ,$(AGENT)))}"
-	@echo "  mcp:   {repository: $(REGISTRY)/frappe-mcp-server, tag: $(lastword $(subst :, ,$(MCP)))}"
-	@echo "  llm:   {repository: $(REGISTRY)/ragbot-llm, tag: $(call tagof,$(LLM_MODEL))}"
-	@echo "  embed: {repository: $(REGISTRY)/ragbot-embed, tag: $(call tagof,$(EMBED_MODEL))}"
-	@echo "llm: {model: $(LLM_MODEL)}"
-	@echo "embed: {model: $(EMBED_MODEL)}"
-
-lint: ## helm lint + render both roles
-	helm lint charts/ragbot -f charts/ragbot/values-onprem.yaml
-	helm lint charts/ragbot -f charts/ragbot/values-rosa.yaml
-	helm template ragbot charts/ragbot -f charts/ragbot/values-onprem.yaml >/dev/null
-	helm template ragbot charts/ragbot -f charts/ragbot/values-rosa.yaml >/dev/null
-
-template-onprem: ## Render what the on-prem cluster gets
-	@helm template ragbot charts/ragbot -n ragbot -f charts/ragbot/values-onprem.yaml
-
-template-rosa: ## Render what the ROSA cluster gets
-	@helm template ragbot charts/ragbot -n ragbot -f charts/ragbot/values-rosa.yaml
-
-.PHONY: help images push image-bench image-agent image-mcp image-llm image-embed values lint template-onprem template-rosa
+.PHONY: help images push image-bench image-agent image-mcp image-llm image-embed

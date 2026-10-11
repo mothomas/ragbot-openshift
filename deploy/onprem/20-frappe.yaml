@@ -1,0 +1,72 @@
+# Frappe (frappe-operator): the bench (nginx, gunicorn, socketio, scheduler,
+# 3 workers, 2 redis), one site with all four apps, and the site's settings.
+apiVersion: vyogo.tech/v1
+kind: FrappeBench
+metadata:
+  name: ragbot
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  frappeVersion: "16"
+  imageConfig:
+    repository: quay.io/CHANGE-ME/ragbot-bench     # built from images/bench/Dockerfile
+    tag: "16"
+    pullPolicy: IfNotPresent
+  apps:
+    - {name: erpnext, source: image}
+    - {name: drive, source: image}
+    - {name: frappe_ai, source: image}
+    - {name: rag, source: image}
+  # Every bench pod mounts the sites volume: it must be ReadWriteMany.
+  storageClassName: ocs-storagecluster-cephfs     # CHANGE-ME if not ODF CephFS
+  storageSize: 20Gi
+  componentAutoscaling:
+    gunicorn:       {enabled: false, staticReplicas: 1}
+    nginx:          {enabled: false, staticReplicas: 1}
+    socketio:       {enabled: false, staticReplicas: 1}
+    scheduler:      {enabled: false, staticReplicas: 1}
+    worker-default: {enabled: false, staticReplicas: 1}
+    worker-short:   {enabled: false, staticReplicas: 1}
+    worker-long:    {enabled: false, staticReplicas: 1}
+---
+apiVersion: vyogo.tech/v1
+kind: FrappeSite
+metadata:
+  name: ragbot
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  benchRef:
+    name: ragbot
+  # A real FQDN is used as-is: the site directory and the Route host.
+  siteName: ragbot.apps.onprem.example.com        # CHANGE-ME
+  apps: [erpnext, drive, frappe_ai, rag]          # cannot be changed after creation
+  dbConfig:
+    provider: mariadb
+    mode: shared
+    mariadbRef:
+      name: ragbot-mariadb
+  routeConfig:
+    enabled: true                                 # https://<siteName> via the OpenShift router
+    host: ragbot.apps.onprem.example.com          # CHANGE-ME (same as siteName)
+    tlsTermination: edge
+---
+apiVersion: vyogo.tech/v1
+kind: SiteConfig
+metadata:
+  name: ragbot
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  siteRef:
+    name: ragbot
+  customConfig:
+    # Frappe's chat relay calls the agent in-cluster; the address is private,
+    # which frappe_ai refuses unless *_unsafe_ok is set.
+    frappe_ai_agent_url: "http://ragbot-agent:8484"
+    frappe_ai_agent_url_unsafe_ok: "1"
+    # rag embeds documents on-prem, on the CPU Ollama in 32-embed.yaml.
+    rag_ollama_url: "http://ollama-embed:11434"
+    rag_embed_model: "nomic-embed-text"
+    # a trace id on every request (ragbot ADR-008)
+    monitor: "1"

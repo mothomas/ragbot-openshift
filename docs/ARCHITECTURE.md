@@ -85,8 +85,8 @@ stay on-prem.
 | | Sessions, permissions, the tool loop, audit logs |
 
 "The DB stays on-prem" is true, but retrieved passages are in the prompt. If no document text
-may leave the site, run the LLM on-prem as well. The chart supports that by pointing
-`AI_AGENT_LLM_BASE_URL` at a local Ollama.
+may leave the site, run the LLM on-prem as well. Do that by pointing
+`AI_AGENT_LLM_BASE_URL` in `deploy/onprem/31-agent.yaml` at a local Ollama.
 
 ## Why it's split this way
 
