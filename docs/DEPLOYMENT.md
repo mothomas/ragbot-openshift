@@ -10,13 +10,19 @@ deploy/rosa/     ─► ACM Placement ragbot-rosa   ─► Application ragbot-ro
 There's no Helm and no Kustomize. Argo CD applies every file in the folder as it is. To change
 something, edit the YAML and push.
 
+The two operators those files depend on are installed by `argocd/operators.yaml`, on the on-prem
+cluster only. It installs frappe-operator (which provides `FrappeBench`, `FrappeSite` and
+`SiteConfig`) and the MariaDB Operator (which provides `MariaDB`). It uses frappe-operator's own
+Helm chart (v5.4.0), because the operator isn't in OpenShift's built-in OperatorHub catalogs and
+the chart is its supported install. The chart includes the MariaDB Operator (0.34.0), and KEDA is
+switched off. Until those resource types exist, `ragbot-onprem` keeps retrying.
+
 ## Prerequisites
 
 | Where | Needs | Notes |
 | --- | --- | --- |
 | Hub | ACM and OpenShift GitOps (central Argo CD) | Both clusters registered with Argo CD (`argocd/gitopscluster.yaml` if not) |
-| On-prem | MariaDB Operator (`k8s.mariadb.com`) | |
-| On-prem | frappe-operator (`vyogo.tech`) | OperatorHub/OLM or Helm |
+| On-prem | frappe-operator and the MariaDB Operator | **Installed by this repo** (`argocd/operators.yaml`). Skip that file if they're already installed |
 | On-prem | Red Hat Service Interconnect 2.x (Skupper) | The manifests use `skupper.io/v2alpha1` |
 | On-prem | MetalLB with an `IPAddressPool` | For `40-frontend-lb.yaml` |
 | On-prem | An RWX StorageClass (ODF CephFS) and an RWO one | The bench's sites volume; MariaDB |
@@ -127,7 +133,7 @@ Fix every `CHANGE-ME`, then commit and push to this repo.
 
 ### 3. On the ACM hub
 
-Label the two clusters, then create the placements and the ApplicationSet:
+Label the two clusters, then create the placements, the operators and the application:
 
 ```bash
 oc label managedcluster <onprem-cluster> ragbot.io/role=onprem
@@ -138,16 +144,17 @@ oc label managedcluster <rosa-cluster> ragbot.io/role=rosa
 ```
 
 ```bash
-oc apply -f argocd/placements.yaml -f argocd/applicationset.yaml
+oc apply -f argocd/placements.yaml -f argocd/operators.yaml -f argocd/applicationset.yaml
 ```
 
-Argo CD creates the `ragbot-onprem` and `ragbot-rosa` Applications.
+Argo CD creates three Applications: `ragbot-operators` (on-prem, namespace
+`frappe-operator-system`), `ragbot-onprem` and `ragbot-rosa`.
 
 ### 4. What to expect on the first sync
 
 | Time | On-prem | ROSA |
 | --- | --- | --- |
-| 0–5 min | Skupper, MariaDB, agent, MCP and embed start | The GPU node pulls the LLM image (~25 GB, once per node) |
+| 0–5 min | The operators install; then Skupper, MariaDB, agent, MCP and embed start | The GPU node pulls the LLM image (~25 GB, once per node) |
 | 5–40 min | frappe-operator initialises the bench, then creates the site with all four apps | The model loads into VRAM, then the pod is Ready |
 | after the site | `ragbot-post-setup` adds the host aliases and the Drive setting | |
 
@@ -223,6 +230,7 @@ Then:
 - **Host header.** Frappe picks the site from the `Host` header. Any name or IP users type must be in `ALIASES` (in `60-post-setup-job.yaml`), and DNS for the MetalLB hostname must point at its IP.
 - **Port 80 on the LB** is for Frappe's realtime authorisation, which fetches the page's origin back without its port. The socketio pod makes that fetch, so the MetalLB hostname must resolve inside the cluster too.
 - **The LB is plain HTTP**, including on 6443. Don't use the cluster's API VIP. Use the Route for HTTPS.
+- **MariaDB 12.3.3 under mariadb-operator 0.34.0** hasn't been tried. If the MariaDB resource doesn't come up, check the mariadb-operator logs in `frappe-operator-system`.
 - **frappe-operator itself hasn't been exercised end to end.** The bench image was tested on MariaDB 12.3.3 with plain `bench`: site install, indexing, permission-aware search, and backup/restore. It hasn't run through the operator's own init Jobs on OpenShift.
 - **`FrappeSite.apps` can't be changed** after creation. Add apps later with a `SiteApp`.
 - **Argo CD has no health checks** for `MariaDB`, `FrappeBench` and `FrappeSite`, so it marks them Healthy as soon as they're applied. The post-setup Job does the real wait.

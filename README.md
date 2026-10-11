@@ -36,7 +36,8 @@ deploy/onprem/    plain YAML for the on-prem cluster
 deploy/rosa/      plain YAML for ROSA
   10-llm.yaml             Ollama + gemma4:26b on 1 GPU
   20-skupper.yaml         Skupper Site + Connector + one-time AccessGrant
-argocd/           ACM Placements + the ApplicationSet
+argocd/           ACM Placements, the ApplicationSet, and operators.yaml
+                  (frappe-operator + MariaDB Operator on the on-prem cluster)
 images/           Dockerfiles: bench, agent, mcp, ollama-model
 app/ragbot/       ragbot source (the rag Frappe app and its /ask UI)
 docs/             architecture, deployment, images
@@ -61,7 +62,8 @@ and hostname, storage class, GPU taint and ACM cluster set:
 grep -rn CHANGE-ME deploy/ argocd/
 ```
 
-**3. On the ACM hub,** label the clusters and create the ApplicationSet:
+**3. On the ACM hub,** label the clusters, then create the ApplicationSets. `operators.yaml`
+installs frappe-operator and the MariaDB Operator on the on-prem cluster:
 
 ```bash
 oc label managedcluster <onprem-cluster> ragbot.io/role=onprem
@@ -72,7 +74,7 @@ oc label managedcluster <rosa-cluster> ragbot.io/role=rosa
 ```
 
 ```bash
-oc apply -f argocd/placements.yaml -f argocd/applicationset.yaml
+oc apply -f argocd/placements.yaml -f argocd/operators.yaml -f argocd/applicationset.yaml
 ```
 
 **4. Link the two Skupper sites, once.** See

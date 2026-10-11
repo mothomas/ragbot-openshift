@@ -1,0 +1,65 @@
+# frappe-operator + MariaDB Operator on the on-prem cluster only.
+#
+# deploy/onprem/ uses their custom resources (FrappeBench, FrappeSite,
+# SiteConfig, MariaDB), which only exist once these operators are installed.
+# frappe-operator isn't in OpenShift's built-in OperatorHub catalogs; its
+# supported install is its own Helm chart, which also installs the MariaDB
+# Operator as a subchart. Helm is used here for the vendor's operator only;
+# the application itself stays plain YAML.
+#
+# Apply on the ACM hub with the other files in argocd/. The ragbot-onprem
+# Application retries until these CRDs exist, so no ordering is needed.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: ragbot-operators
+  namespace: openshift-gitops
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusterDecisionResource:
+        configMapRef: acm-placement
+        labelSelector:
+          matchLabels:
+            cluster.open-cluster-management.io/placement: ragbot-onprem
+        requeueAfterSeconds: 180
+  template:
+    metadata:
+      name: ragbot-operators
+    spec:
+      project: default
+      source:
+        repoURL: https://vyogotech.github.io/frappe-operator/helm-repo
+        chart: frappe-operator
+        targetRevision: 5.4.0          # frappe-operator v5.4.0, mariadb-operator 0.34.0
+        helm:
+          releaseName: frappe-operator
+          valuesObject:
+            keda:
+              enabled: false           # worker autoscaling isn't used here
+            mariadb-operator:
+              enabled: true            # installs the MariaDB Operator + its CRDs
+      destination:
+        name: '{{ .name }}'
+        namespace: frappe-operator-system
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        retry:
+          limit: 5
+          backoff: {duration: 30s, factor: 2, maxDuration: 5m}
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true        # the CRDs are too large for client-side apply
+          - RespectIgnoreDifferences=true
+      # mariadb-operator's cert-controller writes the webhook CA bundle at
+      # runtime; don't let Argo CD fight it.
+      ignoreDifferences:
+        - group: admissionregistration.k8s.io
+          kind: ValidatingWebhookConfiguration
+          jqPathExpressions: ['.webhooks[]?.clientConfig.caBundle']
+        - group: admissionregistration.k8s.io
+          kind: MutatingWebhookConfiguration
+          jqPathExpressions: ['.webhooks[]?.clientConfig.caBundle']
