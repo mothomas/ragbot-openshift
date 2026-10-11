@@ -98,8 +98,8 @@ The full breakdown is in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#what-runs-where
 
 ## Status
 
-The chart renders and lints for both roles. The agent, MCP and embedding images build from these
-Dockerfiles and run as a random OpenShift UID (the embedding image serves 768-dim vectors). **It has not yet been deployed end to end.** Before relying on it, read the known
+The chart renders and lints for both roles. The bench (multi-arch amd64 + arm64), agent, MCP and
+embedding images build from these Dockerfiles and run as a random OpenShift UID. **It has not yet been deployed end to end.** Before relying on it, read the known
 gaps in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#known-gaps-check-these-first), above all MariaDB
 12 under frappe-operator and realtime through the Route.
 

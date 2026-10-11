@@ -20,7 +20,7 @@ you want even when building on Apple Silicon.
 
 | Image | Dockerfile | Contents | Approx. size | Runs on |
 | --- | --- | --- | --- | --- |
-| `ragbot-bench:16` | `images/bench/Dockerfile` | Frappe v16.34.0 + erpnext + drive + frappe_ai + rag | ~3 GB | on-prem (every bench pod) |
+| `ragbot-bench:16` | `images/bench/Dockerfile` | Frappe v16 + erpnext + drive + frappe_ai + rag, on frappe-operator's v16 image | ~2 GB compressed per arch (measured) | on-prem (every bench pod) |
 | `frappe-ai-agent:7f1ef10c` | `images/agent/Dockerfile` | The agent, at ragbot's pinned commit | 359 MB (measured) | on-prem |
 | `frappe-mcp-server:a01ce12c` | `images/mcp/Dockerfile` | The MCP server, at ragbot's pinned commit | 36 MB (measured) | on-prem |
 | `ragbot-embed:nomic-embed-text` | `images/ollama-model/Dockerfile` | Ollama 0.34.1 + nomic-embed-text | 7.5 GB (measured; the Ollama runtime with its GPU libraries is most of it, the model is 270 MB) | on-prem, CPU |
@@ -28,6 +28,40 @@ you want even when building on Apple Silicon.
 
 Build one at a time with `make image-bench`, `image-agent`, `image-mcp`, `image-llm` or
 `image-embed`. Without make, each Dockerfile's header has the plain `podman build` line.
+
+## Multi-arch (amd64 + arm64)
+
+Every base image used here is published for both architectures:
+- the frappe-operator v16 image
+- `python:3.12-slim`
+- `golang` and `alpine`
+- `ollama/ollama`
+
+So each Dockerfile builds for both architectures with Docker buildx.
+
+Keep the result in local Docker. This needs Docker's containerd image store, which recent Docker
+Desktop uses by default:
+
+```bash
+docker buildx build --platform linux/amd64,linux/arm64 -f images/bench/Dockerfile -t ragbot-bench:16 --load .
+```
+
+Or push the multi-arch manifest straight to a registry:
+
+```bash
+docker buildx build --platform linux/amd64,linux/arm64 -f images/bench/Dockerfile -t quay.io/<you>/ragbot-bench:16 --push .
+```
+
+Through make:
+
+```bash
+make images ENGINE=docker PLATFORM=linux/amd64,linux/arm64 REGISTRY=quay.io/<you>
+```
+
+The architecture that doesn't match the build machine runs under QEMU emulation, which is slow.
+For the bench image, most of that time goes on compiling drive's `pycrdt` (Rust). OpenShift
+nodes are amd64, so a single `linux/amd64` build is enough to deploy. arm64 is for local
+testing on Apple Silicon.
 
 ## The model is packaged in the image
 
@@ -78,18 +112,26 @@ To keep the first pull fast:
 
 ## The bench image
 
-Two layers:
+`images/bench/Dockerfile` is one self-contained build. Run it from the **repository root**, because
+it copies from `app/ragbot`:
 
-1. **`make image-bench-base`** runs frappe_docker's `images/layered/Containerfile` (pinned at
-   `a0c5213`) with `images/bench/apps.json`: erpnext `version-16`, drive `develop` and frappe_ai
-   `audit/production-readiness`. This is exactly how ragbot builds its own image.
-2. **`images/bench/Dockerfile`** adds `rag` from `app/ragbot/rag`:
-   - It's installed with `bench pip install -e`, its `/ask` frontend is built with yarn, and `bench build --app rag` runs.
-   - `mariadb-client.cnf` is installed system-wide as `/etc/mysql/conf.d/ragbot-client.cnf`.
-   - Without that file, `mariadb-dump` writes VECTOR columns as text, and a restore silently zeroes every embedding (MDEV-35221).
+```bash
+docker build -f images/bench/Dockerfile -t quay.io/<you>/ragbot-bench:16 .
+```
 
-rag is a subdirectory of the ragbot repo, not a repo of its own, so `bench get-app` can't fetch it.
-That's why it's copied in.
+It starts from frappe-operator's own v16 image (`ghcr.io/vyogotech/erpnext-for-operator:version-16`,
+Frappe 16.31 + erpnext, Python 3.14), so the layout is what the operator expects:
+
+- **Two stages.** drive depends on `pycrdt`, which has no Python 3.14 wheel and compiles from source. Rust is fetched by maturin, and the C toolchain is installed in the build stage only. The final image copies over just the new apps, the env and the assets, so no compiler ships.
+- **drive** (`develop`) and **frappe_ai** (`audit/production-readiness`) come from their repos via `bench get-app`. The branches are build args.
+- **rag** is copied from `app/ragbot/rag`. It's a subdirectory of the ragbot repo, not a repo of its own, so `get-app` can't fetch it. It's installed into the bench env, and its `/ask` frontend is built with yarn.
+- **`/home/frappe/assets_cache`** is refreshed with the new apps' bundles. The operator's bench and site init scripts copy that folder onto the shared sites volume; without it, the new apps would serve no CSS or JS.
+- **`mariadb-client.cnf`** is installed system-wide as `/etc/mysql/conf.d/ragbot-client.cnf`. Without it, `mariadb-dump` writes VECTOR columns as text, and a restore silently zeroes every embedding (MDEV-35221).
+- **Group 0 owns everything**, for OpenShift's random UID.
+
+To build on a different base, pass `--build-arg BASE_IMAGE=...`. Any base must keep the
+operator's layout: the bench at `/home/frappe/frappe-bench` and assets in
+`/home/frappe/assets_cache`.
 
 ## The agent and MCP images
 
@@ -110,7 +152,6 @@ random non-root UID in group 0, the way OpenShift runs them:
 | `frappe-mcp-server` | Builds. The binary is executable by any UID |
 | `frappe-ai-agent` | Builds. `ai_agent.app` imports |
 | `ragbot-embed` (nomic-embed-text) | Builds. Serves as a random UID; `ollama show` finds the model; `/api/embed` returns 768-dim vectors |
+| `ragbot-bench` | Builds **multi-arch (amd64 + arm64)** with `docker buildx --load`. On both: frappe, erpnext, drive, frappe_ai and rag import as a random UID; `assets_cache` links resolve for all five apps; `assets.json` keeps the frappe and erpnext bundles (`desk.bundle.js`) plus drive and frappe_ai; rag's `/ask` export is in place; no compiler in the final image |
 
-**Not built here:**
-- `ragbot-llm` uses the same Dockerfile as `ragbot-embed`, just with a larger model.
-- `ragbot-bench` takes about 20 minutes, mostly frappe_docker's base build. Its `bench pip install` step for rag is the line most likely to need adjusting on the first build.
+**Not built here:** `ragbot-llm`. It uses the same Dockerfile as `ragbot-embed`, just with a larger model.
